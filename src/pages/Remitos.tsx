@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Plus, Upload } from 'lucide-react'
-import { supabase, type Product } from '../lib/supabase'
+import { api, type Product } from '../lib/api'
 import { normalize, parseRemito } from '../lib/parseRemito'
 
 type Row = {
@@ -26,7 +26,7 @@ async function extractPdfText(file: File): Promise<string> {
   return text
 }
 
-export default function Remitos({ branchId }: { branchId: string }) {
+export default function Remitos() {
   const [products, setProducts] = useState<Product[]>([])
   const [rows, setRows] = useState<Row[]>([])
   const [pdfName, setPdfName] = useState('')
@@ -35,7 +35,7 @@ export default function Remitos({ branchId }: { branchId: string }) {
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    supabase.from('products').select('*').order('name').then(({ data }) => setProducts(data ?? []))
+    api<Product[]>('/products').then(setProducts)
   }, [])
 
   async function onFile(file: File) {
@@ -64,6 +64,8 @@ export default function Remitos({ branchId }: { branchId: string }) {
     setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)))
   }
 
+  // Un solo POST: el servidor guarda remito + items + movimientos + alertas
+  // de desvío en una transacción.
   async function confirm() {
     const valid = rows.filter((r) => r.productId && r.actual !== '')
     if (valid.length === 0 || !manager.trim()) {
@@ -72,59 +74,30 @@ export default function Remitos({ branchId }: { branchId: string }) {
     }
     setBusy(true)
     setMsg('')
-    const discrepancies = valid.filter((r) => Number(r.actual) !== (r.expected ?? Number(r.actual)))
-    const { data: remito, error } = await supabase
-      .from('remitos')
-      .insert({
-        branch_id: branchId,
-        pdf_name: pdfName || 'carga manual',
-        status: discrepancies.length ? 'con_incongruencia' : 'correcto',
-        manager_name: manager.trim(),
-      })
-      .select()
-      .single()
-    if (error || !remito) {
-      setMsg('Error al guardar el remito: ' + (error?.message ?? ''))
-      setBusy(false)
-      return
-    }
-    await supabase.from('remito_items').insert(
-      valid.map((r) => ({
-        remito_id: remito.id,
-        product_id: r.productId,
-        expected_qty: r.expected ?? Number(r.actual),
-        actual_qty: Number(r.actual),
-        discrepancy_qty: Number(r.actual) - (r.expected ?? Number(r.actual)),
-      })),
-    )
-    // el stock ingresa con la cantidad física real; el trigger actualiza inventory
-    await supabase.from('stock_movements').insert(
-      valid
-        .filter((r) => Number(r.actual) > 0)
-        .map((r) => ({
-          branch_id: branchId,
-          product_id: r.productId,
-          type: 'remito_fabrica',
-          quantity: Number(r.actual),
+    try {
+      const remito = await api<{ status: string }>('/remitos', {
+        method: 'POST',
+        body: JSON.stringify({
+          pdf_name: pdfName || 'carga manual',
           manager_name: manager.trim(),
-          reason: pdfName || 'carga manual',
-        })),
-    )
-    if (discrepancies.length) {
-      const nameOf = new Map(products.map((p) => [p.id, p.name]))
-      await supabase.from('alerts').insert(
-        discrepancies.map((r) => ({
-          branch_id: branchId,
-          product_id: r.productId,
-          type: 'desvio_remito',
-          message: `Desvío en remito ${pdfName || '(manual)'}: ${nameOf.get(r.productId!)} esperado ${r.expected}, físico ${r.actual}`,
-        })),
+          items: valid.map((r) => ({
+            product_id: r.productId,
+            expected_qty: r.expected ?? Number(r.actual),
+            actual_qty: Number(r.actual),
+          })),
+        }),
+      })
+      setRows([])
+      setPdfName('')
+      setManager('')
+      setMsg(
+        remito.status === 'con_incongruencia'
+          ? 'Remito guardado CON incongruencias — se notificó al administrador.'
+          : 'Remito guardado sin diferencias. Stock actualizado.',
       )
+    } catch (e) {
+      setMsg('Error al guardar el remito: ' + (e as Error).message)
     }
-    setRows([])
-    setPdfName('')
-    setManager('')
-    setMsg(discrepancies.length ? 'Remito guardado CON incongruencias — se notificó al administrador.' : 'Remito guardado sin diferencias. Stock actualizado.')
     setBusy(false)
   }
 

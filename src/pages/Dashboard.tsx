@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Bell, BellRing, Check, LogOut, RefreshCw } from 'lucide-react'
-import { supabase, type Alert, type Branch, type Product, type Profile } from '../lib/supabase'
+import { api, getToken, type Alert, type Branch, type Product } from '../lib/api'
 
 type InvRow = { branch_id: string; product_id: string; current_stock: number }
 type Movement = {
@@ -23,7 +23,7 @@ function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
   return out
 }
 
-export default function Dashboard({ profile }: { profile: Profile }) {
+export default function Dashboard({ onLogout }: { onLogout: () => void }) {
   const [branches, setBranches] = useState<Branch[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [inventory, setInventory] = useState<InvRow[]>([])
@@ -34,45 +34,39 @@ export default function Dashboard({ profile }: { profile: Profile }) {
 
   const load = useCallback(async () => {
     const [b, p, inv, al] = await Promise.all([
-      supabase.from('branches').select('*').order('name'),
-      supabase.from('products').select('*').order('name'),
-      supabase.from('inventory').select('branch_id, product_id, current_stock'),
-      supabase.from('alerts').select('*').eq('resolved', false).order('created_at', { ascending: false }),
+      api<Branch[]>('/branches'),
+      api<Product[]>('/products'),
+      api<InvRow[]>('/inventory'),
+      api<Alert[]>('/alerts'),
     ])
-    setBranches(b.data ?? [])
-    setProducts(p.data ?? [])
-    setInventory(inv.data ?? [])
-    setAlerts(al.data ?? [])
+    setBranches(b)
+    setProducts(p)
+    setInventory(inv)
+    setAlerts(al)
   }, [])
 
   useEffect(() => {
     load()
-    const channel = supabase
-      .channel('alerts-rt')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'alerts' }, (payload) =>
-        setAlerts((a) => [payload.new as Alert, ...a]),
-      )
-      .subscribe()
-    return () => {
-      supabase.removeChannel(channel)
-    }
+    // alertas en vivo por SSE (EventSource no admite headers → token en query)
+    const es = new EventSource('/api/events?token=' + getToken())
+    es.onmessage = (e) => setAlerts((a) => [JSON.parse(e.data) as Alert, ...a])
+    return () => es.close()
   }, [load])
 
   async function loadMovements() {
-    let q = supabase.from('stock_movements').select('*').order('created_at', { ascending: false }).limit(200)
-    if (f.branch) q = q.eq('branch_id', f.branch)
-    if (f.product) q = q.eq('product_id', f.product)
-    if (f.from) q = q.gte('created_at', f.from)
-    if (f.to) q = q.lte('created_at', f.to + 'T23:59:59')
-    const { data } = await q
-    let rows = data ?? []
+    const params = new URLSearchParams()
+    if (f.branch) params.set('branch', f.branch)
+    if (f.product) params.set('product', f.product)
+    if (f.from) params.set('from', f.from)
+    if (f.to) params.set('to', f.to)
+    let rows = await api<Movement[]>('/movements?' + params)
     if (f.hourFrom) rows = rows.filter((m) => new Date(m.created_at).getHours() >= Number(f.hourFrom))
     if (f.hourTo) rows = rows.filter((m) => new Date(m.created_at).getHours() <= Number(f.hourTo))
     setMovements(rows)
   }
 
   async function resolveAlert(id: string) {
-    await supabase.from('alerts').update({ resolved: true }).eq('id', id)
+    await api(`/alerts/${id}/resolve`, { method: 'PATCH' })
     setAlerts((a) => a.filter((x) => x.id !== id))
   }
 
@@ -81,14 +75,19 @@ export default function Dashboard({ profile }: { profile: Profile }) {
       window.alert('Este navegador no soporta notificaciones push.')
       return
     }
+    const { key } = await api<{ key: string | null }>('/vapid-public-key')
+    if (!key) {
+      window.alert('El servidor no tiene configuradas las claves VAPID (ver README).')
+      return
+    }
     const perm = await Notification.requestPermission()
     if (perm !== 'granted') return
     const reg = await navigator.serviceWorker.ready
     const sub = await reg.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(import.meta.env.VITE_VAPID_PUBLIC_KEY),
+      applicationServerKey: urlBase64ToUint8Array(key),
     })
-    await supabase.from('push_subscriptions').insert({ profile_id: profile.id, subscription: sub.toJSON() })
+    await api('/push-subscriptions', { method: 'POST', body: JSON.stringify({ subscription: sub.toJSON() }) })
     setPushOn(true)
   }
 
@@ -114,7 +113,7 @@ export default function Dashboard({ profile }: { profile: Profile }) {
           <button onClick={load} title="Refrescar" className="p-2 hover:bg-amber-800 rounded">
             <RefreshCw size={16} />
           </button>
-          <button onClick={() => supabase.auth.signOut()} title="Salir" className="p-2 hover:bg-amber-800 rounded">
+          <button onClick={onLogout} title="Salir" className="p-2 hover:bg-amber-800 rounded">
             <LogOut size={16} />
           </button>
         </div>

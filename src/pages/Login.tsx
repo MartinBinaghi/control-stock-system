@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
-import { supabase } from '../lib/supabase'
+import { api, setToken, type Profile } from '../lib/api'
 
-export default function Login() {
+export default function Login({ onLogin }: { onLogin: (p: Profile) => void }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -11,9 +11,17 @@ export default function Login() {
     e.preventDefault()
     setBusy(true)
     setError('')
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) setError('Email o contraseña incorrectos')
-    setBusy(false)
+    try {
+      const { token, profile } = await api<{ token: string; profile: Profile }>('/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password }),
+      })
+      setToken(token)
+      onLogin(profile)
+    } catch {
+      setError('Email o contraseña incorrectos')
+      setBusy(false)
+    }
   }
 
   return (

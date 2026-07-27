@@ -1,25 +1,26 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { ArrowDownCircle, ArrowUpCircle, Trash2 } from 'lucide-react'
-import { supabase, type MovementType, type Product } from '../lib/supabase'
+import { api, type MovementType, type Product } from '../lib/api'
 
 const MERMA_CAUSAS = ['Vencimiento', 'Cadena de frío', 'Rotura', 'Otro']
 
 type Row = Product & { current_stock: number }
 type ModalState = { product: Row; type: MovementType } | null
 
-export default function Mostrador({ branchId }: { branchId: string }) {
+export default function Mostrador() {
   const [rows, setRows] = useState<Row[]>([])
   const [modal, setModal] = useState<ModalState>(null)
   const [filter, setFilter] = useState('')
 
   const load = useCallback(async () => {
-    const [{ data: products }, { data: inv }] = await Promise.all([
-      supabase.from('products').select('*').order('name'),
-      supabase.from('inventory').select('product_id, current_stock').eq('branch_id', branchId),
+    // el servidor limita inventory a la sucursal del encargado
+    const [products, inv] = await Promise.all([
+      api<Product[]>('/products'),
+      api<{ product_id: string; current_stock: number }[]>('/inventory'),
     ])
-    const stock = new Map((inv ?? []).map((i) => [i.product_id, i.current_stock]))
-    setRows((products ?? []).map((p) => ({ ...p, current_stock: stock.get(p.id) ?? 0 })))
-  }, [branchId])
+    const stock = new Map(inv.map((i) => [i.product_id, i.current_stock]))
+    setRows(products.map((p) => ({ ...p, current_stock: stock.get(p.id) ?? 0 })))
+  }, [])
 
   useEffect(() => {
     load()
@@ -74,7 +75,6 @@ export default function Mostrador({ branchId }: { branchId: string }) {
       </ul>
       {modal && (
         <MovementModal
-          branchId={branchId}
           modal={modal}
           onClose={() => setModal(null)}
           onSaved={() => {
@@ -88,12 +88,10 @@ export default function Mostrador({ branchId }: { branchId: string }) {
 }
 
 function MovementModal({
-  branchId,
   modal,
   onClose,
   onSaved,
 }: {
-  branchId: string
   modal: NonNullable<ModalState>
   onClose: () => void
   onSaved: () => void
@@ -111,19 +109,21 @@ function MovementModal({
     e.preventDefault()
     setBusy(true)
     setError('')
-    const { error } = await supabase.from('stock_movements').insert({
-      branch_id: branchId,
-      product_id: modal.product.id,
-      type: modal.type,
-      quantity: Number(qty),
-      manager_name: manager.trim(),
-      reason: isMerma ? causa : null,
-    })
-    if (error) {
-      setError('No se pudo guardar: ' + error.message)
-      setBusy(false)
-    } else {
+    try {
+      await api('/movements', {
+        method: 'POST',
+        body: JSON.stringify({
+          product_id: modal.product.id,
+          type: modal.type,
+          quantity: Number(qty),
+          manager_name: manager.trim(),
+          reason: isMerma ? causa : null,
+        }),
+      })
       onSaved()
+    } catch (e) {
+      setError('No se pudo guardar: ' + (e as Error).message)
+      setBusy(false)
     }
   }
 
