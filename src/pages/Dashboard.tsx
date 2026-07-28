@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Bell, BellRing, Check, LogOut, RefreshCw } from 'lucide-react'
-import { supabase, type Alert, type Branch, type Product, type Profile } from '../lib/supabase'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { Bell, BellRing, Check, LogOut, RefreshCw, Trash2 } from 'lucide-react'
+import { api, getToken, type Alert, type Branch, type Product, type Worker } from '../lib/api'
 
 type InvRow = { branch_id: string; product_id: string; current_stock: number }
 type Movement = {
@@ -23,7 +23,7 @@ function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
   return out
 }
 
-export default function Dashboard({ profile }: { profile: Profile }) {
+export default function Dashboard({ onLogout }: { onLogout: () => void }) {
   const [branches, setBranches] = useState<Branch[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [inventory, setInventory] = useState<InvRow[]>([])
@@ -34,45 +34,39 @@ export default function Dashboard({ profile }: { profile: Profile }) {
 
   const load = useCallback(async () => {
     const [b, p, inv, al] = await Promise.all([
-      supabase.from('branches').select('*').order('name'),
-      supabase.from('products').select('*').order('name'),
-      supabase.from('inventory').select('branch_id, product_id, current_stock'),
-      supabase.from('alerts').select('*').eq('resolved', false).order('created_at', { ascending: false }),
+      api<Branch[]>('/branches'),
+      api<Product[]>('/products'),
+      api<InvRow[]>('/inventory'),
+      api<Alert[]>('/alerts'),
     ])
-    setBranches(b.data ?? [])
-    setProducts(p.data ?? [])
-    setInventory(inv.data ?? [])
-    setAlerts(al.data ?? [])
+    setBranches(b)
+    setProducts(p)
+    setInventory(inv)
+    setAlerts(al)
   }, [])
 
   useEffect(() => {
     load()
-    const channel = supabase
-      .channel('alerts-rt')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'alerts' }, (payload) =>
-        setAlerts((a) => [payload.new as Alert, ...a]),
-      )
-      .subscribe()
-    return () => {
-      supabase.removeChannel(channel)
-    }
+    // alertas en vivo por SSE (EventSource no admite headers → token en query)
+    const es = new EventSource('/api/events?token=' + getToken())
+    es.onmessage = (e) => setAlerts((a) => [JSON.parse(e.data) as Alert, ...a])
+    return () => es.close()
   }, [load])
 
   async function loadMovements() {
-    let q = supabase.from('stock_movements').select('*').order('created_at', { ascending: false }).limit(200)
-    if (f.branch) q = q.eq('branch_id', f.branch)
-    if (f.product) q = q.eq('product_id', f.product)
-    if (f.from) q = q.gte('created_at', f.from)
-    if (f.to) q = q.lte('created_at', f.to + 'T23:59:59')
-    const { data } = await q
-    let rows = data ?? []
+    const params = new URLSearchParams()
+    if (f.branch) params.set('branch', f.branch)
+    if (f.product) params.set('product', f.product)
+    if (f.from) params.set('from', f.from)
+    if (f.to) params.set('to', f.to)
+    let rows = await api<Movement[]>('/movements?' + params)
     if (f.hourFrom) rows = rows.filter((m) => new Date(m.created_at).getHours() >= Number(f.hourFrom))
     if (f.hourTo) rows = rows.filter((m) => new Date(m.created_at).getHours() <= Number(f.hourTo))
     setMovements(rows)
   }
 
   async function resolveAlert(id: string) {
-    await supabase.from('alerts').update({ resolved: true }).eq('id', id)
+    await api(`/alerts/${id}/resolve`, { method: 'PATCH' })
     setAlerts((a) => a.filter((x) => x.id !== id))
   }
 
@@ -81,14 +75,19 @@ export default function Dashboard({ profile }: { profile: Profile }) {
       window.alert('Este navegador no soporta notificaciones push.')
       return
     }
+    const { key } = await api<{ key: string | null }>('/vapid-public-key')
+    if (!key) {
+      window.alert('El servidor no tiene configuradas las claves VAPID (ver README).')
+      return
+    }
     const perm = await Notification.requestPermission()
     if (perm !== 'granted') return
     const reg = await navigator.serviceWorker.ready
     const sub = await reg.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(import.meta.env.VITE_VAPID_PUBLIC_KEY),
+      applicationServerKey: urlBase64ToUint8Array(key),
     })
-    await supabase.from('push_subscriptions').insert({ profile_id: profile.id, subscription: sub.toJSON() })
+    await api('/push-subscriptions', { method: 'POST', body: JSON.stringify({ subscription: sub.toJSON() }) })
     setPushOn(true)
   }
 
@@ -100,7 +99,7 @@ export default function Dashboard({ profile }: { profile: Profile }) {
   return (
     <div className="min-h-screen bg-amber-50">
       <header className="bg-amber-700 text-white flex items-center justify-between px-4 py-3 shadow">
-        <h1 className="font-bold text-lg">Di Polo Pastas — Panel Administrador</h1>
+        <h1 className="font-bold text-lg">Control de Stock — Panel Administrador</h1>
         <div className="flex gap-2 items-center">
           <button
             onClick={enablePush}
@@ -114,7 +113,7 @@ export default function Dashboard({ profile }: { profile: Profile }) {
           <button onClick={load} title="Refrescar" className="p-2 hover:bg-amber-800 rounded">
             <RefreshCw size={16} />
           </button>
-          <button onClick={() => supabase.auth.signOut()} title="Salir" className="p-2 hover:bg-amber-800 rounded">
+          <button onClick={onLogout} title="Salir" className="p-2 hover:bg-amber-800 rounded">
             <LogOut size={16} />
           </button>
         </div>
@@ -241,7 +240,129 @@ export default function Dashboard({ profile }: { profile: Profile }) {
             </table>
           </div>
         </section>
+
+        <Gestion branches={branches} onChanged={load} />
       </main>
     </div>
+  )
+}
+
+// Alta de sucursales, productos e invitación de trabajadores por email.
+function Gestion({ branches, onChanged }: { branches: Branch[]; onChanged: () => void }) {
+  const [team, setTeam] = useState<Worker[]>([])
+  const [branch, setBranch] = useState({ name: '', address: '' })
+  const [product, setProduct] = useState({ name: '', category: '', unit: '', min: '' })
+  const [invite, setInvite] = useState({ name: '', email: '', branch_id: '' })
+  const [msg, setMsg] = useState('')
+
+  const loadTeam = useCallback(() => api<Worker[]>('/team').then(setTeam), [])
+  useEffect(() => {
+    loadTeam()
+  }, [loadTeam])
+
+  async function run(fn: () => Promise<unknown>, ok: string) {
+    setMsg('')
+    try {
+      await fn()
+      setMsg(ok)
+      onChanged()
+      loadTeam()
+    } catch (e) {
+      setMsg('Error: ' + (e as Error).message)
+    }
+  }
+
+  function addBranch(e: FormEvent) {
+    e.preventDefault()
+    run(async () => {
+      await api('/branches', { method: 'POST', body: JSON.stringify(branch) })
+      setBranch({ name: '', address: '' })
+    }, 'Sucursal creada.')
+  }
+
+  function addProduct(e: FormEvent) {
+    e.preventDefault()
+    run(async () => {
+      await api('/products', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: product.name,
+          category: product.category || null,
+          unit: product.unit,
+          min_stock_threshold: product.min === '' ? 0 : Number(product.min),
+        }),
+      })
+      setProduct({ name: '', category: '', unit: '', min: '' })
+    }, 'Producto creado.')
+  }
+
+  function sendInvite(e: FormEvent) {
+    e.preventDefault()
+    run(async () => {
+      await api('/invite', { method: 'POST', body: JSON.stringify(invite) })
+      setInvite({ name: '', email: '', branch_id: '' })
+    }, 'Invitación enviada por email.')
+  }
+
+  const input = 'border rounded-lg px-2 py-1.5 bg-white'
+  const btn = 'bg-amber-700 hover:bg-amber-800 text-white rounded-lg px-4 py-1.5'
+  const branchName = (id: string) => branches.find((b) => b.id === id)?.name ?? '—'
+
+  return (
+    <section>
+      <h2 className="font-bold text-amber-900 mb-2">Gestión</h2>
+      <div className="space-y-4 bg-white rounded-xl shadow-sm p-4">
+        <form onSubmit={addBranch} className="flex flex-wrap gap-2 items-center">
+          <span className="w-28 text-sm font-medium">Sucursal</span>
+          <input required placeholder="Nombre" value={branch.name} onChange={(e) => setBranch({ ...branch, name: e.target.value })} className={input} />
+          <input placeholder="Dirección" value={branch.address} onChange={(e) => setBranch({ ...branch, address: e.target.value })} className={input} />
+          <button className={btn}>Crear</button>
+        </form>
+
+        <form onSubmit={addProduct} className="flex flex-wrap gap-2 items-center">
+          <span className="w-28 text-sm font-medium">Producto</span>
+          <input required placeholder="Nombre" value={product.name} onChange={(e) => setProduct({ ...product, name: e.target.value })} className={input} />
+          <input placeholder="Categoría" value={product.category} onChange={(e) => setProduct({ ...product, category: e.target.value })} className={input} />
+          <input placeholder="Unidad (kg, plancha…)" value={product.unit} onChange={(e) => setProduct({ ...product, unit: e.target.value })} className={input} />
+          <input type="number" min="0" step="any" placeholder="Stock mínimo" value={product.min} onChange={(e) => setProduct({ ...product, min: e.target.value })} className={`${input} w-32`} />
+          <button className={btn}>Crear</button>
+        </form>
+
+        <form onSubmit={sendInvite} className="flex flex-wrap gap-2 items-center">
+          <span className="w-28 text-sm font-medium">Trabajador</span>
+          <input required placeholder="Nombre" value={invite.name} onChange={(e) => setInvite({ ...invite, name: e.target.value })} className={input} />
+          <input type="email" required placeholder="Email" value={invite.email} onChange={(e) => setInvite({ ...invite, email: e.target.value })} className={input} />
+          <select required value={invite.branch_id} onChange={(e) => setInvite({ ...invite, branch_id: e.target.value })} className={input}>
+            <option value="">Sucursal…</option>
+            {branches.map((b) => (
+              <option key={b.id} value={b.id}>{b.name}</option>
+            ))}
+          </select>
+          <button className={btn}>Invitar</button>
+        </form>
+
+        {msg && <p className="text-sm text-amber-900 bg-amber-100 rounded-lg p-2">{msg}</p>}
+
+        {team.length > 0 && (
+          <ul className="divide-y text-sm">
+            {team.map((w) => (
+              <li key={w.id} className="py-2 flex items-center justify-between gap-2">
+                <span>
+                  <span className="font-medium">{w.name}</span> · {w.email} · {branchName(w.branch_id)}
+                  {!w.verified && <span className="ml-2 text-xs text-orange-600 bg-orange-50 rounded px-1.5 py-0.5">invitación pendiente</span>}
+                </span>
+                <button
+                  title="Eliminar cuenta"
+                  onClick={() => confirm(`¿Eliminar la cuenta de ${w.name}?`) && run(() => api(`/team/${w.id}`, { method: 'DELETE' }), 'Cuenta eliminada.')}
+                  className="p-1.5 text-red-700 hover:bg-red-50 rounded-lg shrink-0"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
   )
 }
