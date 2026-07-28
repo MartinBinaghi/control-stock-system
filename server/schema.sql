@@ -7,8 +7,13 @@
 
 -- ---------- Tablas ----------
 
+-- Multi-tenant: cada admin que se registra es un negocio aislado. branches,
+-- products y users cuelgan del admin dueño (owner_id); el resto de las tablas
+-- se filtran vía branch_id en la API.
+
 create table branches (
   id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null,  -- FK a users al final (referencia circular)
   name text not null,
   address text,
   created_at timestamptz not null default now()
@@ -17,14 +22,21 @@ create table branches (
 create table users (
   id uuid primary key default gen_random_uuid(),
   email text not null unique,
-  password_hash text not null,
+  password_hash text,  -- null hasta que el trabajador acepta la invitación
+  name text not null,
   role text not null check (role in ('admin', 'encargado')),
+  owner_id uuid references users on delete cascade,  -- admin dueño (null si es admin)
   branch_id uuid references branches,  -- null si es admin
+  verified boolean not null default false,
+  token text unique,  -- verificación de email (admin) o invitación (encargado)
   created_at timestamptz not null default now()
 );
 
+alter table branches add foreign key (owner_id) references users on delete cascade;
+
 create table products (
   id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null references users on delete cascade,
   name text not null,
   category text,
   unit text not null default 'unidad',
@@ -150,18 +162,11 @@ create trigger trg_notify_alert
 -- stock_movements no tiene update/delete en la API: es historial de auditoría.
 
 -- ============================================================
--- SEED / SETUP MANUAL (editar y descomentar)
+-- SETUP
 -- ============================================================
--- 1. Sucursales y productos de ejemplo:
--- insert into branches (name, address) values
---   ('Sucursal Centro', 'Av. Principal 123'),
---   ('Sucursal Norte', 'Calle 45 678');
--- insert into products (name, category, unit, min_stock_threshold) values
---   ('Ravioles de ricota', 'Pastas rellenas', 'plancha', 10),
---   ('Ñoquis de papa', 'Pastas', 'kg', 5),
---   ('Tallarines al huevo', 'Pastas', 'kg', 5),
---   ('Salsa fileto', 'Salsas', 'unidad', 8);
---
--- 2. Usuarios (hashea la contraseña, upsert por email):
---   node server/create-user.ts dueno@dipolo.com clave123 admin
---   node server/create-user.ts centro@dipolo.com clave123 encargado <uuid-sucursal>
+-- No hay seed: el alta es autoservicio desde la app —
+--   1. Registrarse en /  (crea un admin, verifica el email).
+--   2. Como admin: crear sucursales y productos, e invitar trabajadores
+--      por email a cada sucursal.
+-- Para crear un admin ya verificado sin email (o resetear una contraseña):
+--   node server/create-user.ts <email> <password>

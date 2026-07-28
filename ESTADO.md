@@ -1,9 +1,11 @@
-# Estado del proyecto — 27/07/2026
+# Estado del proyecto — 28/07/2026
 
-Sistema de control de stock multi-sucursal para Di Polo Pastas (franquicia de pastas).
+Sistema de control de stock multi-sucursal (origen: Di Polo Pastas).
 Decisiones de diseño y contexto: ver `control-stock-propuesta.md` (propuesta original) y `README.md` (setup).
 
 **Cambio de arquitectura (27/07):** se eliminó la dependencia de Supabase. Ahora hay un backend propio en Node (Express) contra PostgreSQL — funciona 100% con una base local. Soporte de nube = apuntar `DATABASE_URL` a cualquier Postgres hosteado.
+
+**Cambio de modelo de usuarios (28/07):** la app pasó a ser **multi-negocio con autoservicio**. Registro público → email de verificación → cuenta admin. Cada admin es un tenant aislado: crea sucursales y productos e invita trabajadores por email (el link les pide elegir contraseña). Todo se filtra por el admin dueño (`owner_id` en `branches`/`products`/`users`; el resto vía `branch_id`), incluidas las alertas SSE y el push. Los movimientos se firman automáticamente con el nombre del usuario logueado (ya no se tipea `manager_name`). Emails por SMTP configurable en `.env` (nodemailer); sin SMTP, los links salen por consola.
 
 ## ✅ Hecho (código completo, build y tests pasan)
 
@@ -33,8 +35,8 @@ Los permisos que antes hacía RLS ahora viven en `server/index.ts` (wrapper `aut
 
 ## 🔜 Por hacer (en orden)
 
-1. **Base real**: instalar PostgreSQL 14+ → `createdb dipolo` → correr `server/schema.sql` → cargar sucursales y productos (seed comentado al final del schema).
-2. **Usuarios y arranque**: `cp .env.example .env` (completar `DATABASE_URL` y `JWT_SECRET`) → `node server/create-user.ts ...` (admin + uno por sucursal) → `npm run dev:server` + `npm run dev` → probar login, mostrador, dashboard y permisos (logueado como encargado no debe ver otra sucursal).
+1. **Base real**: hay PostgreSQL 18 corriendo en esta máquina (servicio `postgresql-x64-18`) pero falta la contraseña de `postgres` → `createdb dipolo` → correr `server/schema.sql`.
+2. **Arranque y prueba end-to-end**: `cp .env.example .env` (completar `DATABASE_URL` y `JWT_SECRET`; SMTP opcional — sin él los links salen por consola) → `npm run dev:server` + `npm run dev` → probar: registro + verificación, crear sucursal/producto, invitar trabajador, aceptar invitación, y aislamiento entre dos admins distintos.
 3. **Push**: `npx web-push generate-vapid-keys` → claves al `.env` → reiniciar servidor → activar notificaciones en el panel y forzar una alerta con la app cerrada.
 4. **Parser de remitos**: conseguir un **PDF real de la fábrica** y ajustar la regex de `src/lib/parseRemito.ts` (hoy asume líneas `PRODUCTO  CANTIDAD`). Actualizar `tests/parseRemito.test.ts` con texto del PDF real. Mientras tanto el módulo funciona con carga manual de filas.
 5. **Deploy**: `npm run build && npm start` en el servidor elegido (el mismo Express sirve API + frontend), con reverse proxy HTTPS adelante (requisito de PWA y push). Instalar la PWA en los locales — en iPhone el push requiere agregarla a pantalla de inicio (iOS 16.4+).
@@ -53,7 +55,7 @@ npm run dev:server                 # API (requiere .env + Postgres)
 npm run dev                        # frontend con proxy a la API
 npm run build                      # typecheck app + server, build a dist/
 npm start                          # producción: API + frontend juntos
-node server/create-user.ts <email> <pass> <admin|encargado> [branch_id]
+node server/create-user.ts <email> <pass>   # admin verificado sin email / reset de contraseña
 node tests/auth.test.ts            # test de hash/verificación de contraseñas
 node tests/parseRemito.test.ts     # test del parser
 ```

@@ -97,7 +97,6 @@ function MovementModal({
   onSaved: () => void
 }) {
   const [qty, setQty] = useState('')
-  const [manager, setManager] = useState('')
   const [causa, setCausa] = useState(MERMA_CAUSAS[0])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -116,7 +115,6 @@ function MovementModal({
           product_id: modal.product.id,
           type: modal.type,
           quantity: Number(qty),
-          manager_name: manager.trim(),
           reason: isMerma ? causa : null,
         }),
       })
@@ -154,13 +152,6 @@ function MovementModal({
             ))}
           </select>
         )}
-        <input
-          required
-          placeholder="Nombre del encargado"
-          value={manager}
-          onChange={(e) => setManager(e.target.value)}
-          className="w-full border rounded-lg px-3 py-2"
-        />
         {error && <p className="text-red-600 text-sm">{error}</p>}
         <div className="flex gap-2 justify-end">
           <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg hover:bg-gray-100">

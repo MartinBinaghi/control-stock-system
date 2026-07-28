@@ -1,6 +1,6 @@
-# Di Polo Pastas — Control de Stock Multi-Sucursal
+# Control de Stock Multi-Sucursal
 
-PWA de control de stock para franquicia gastronómica: stock en tiempo real por sucursal, mermas, auditoría de movimientos, validación de remitos PDF y alertas con notificaciones push.
+PWA de control de stock multi-negocio: cualquier persona se registra (con verificación de email) y queda como administrador de su propio negocio — crea sucursales y productos e invita trabajadores por email a cada sucursal. Stock en tiempo real por sucursal, mermas, auditoría de movimientos, validación de remitos PDF y alertas con notificaciones push. Los datos de cada negocio están completamente aislados.
 
 **Stack:** React + Vite + TypeScript + Tailwind CSS · Backend propio en Node (Express) + PostgreSQL · SSE para alertas en vivo · Web Push · PWA instalable (escritorio y mobile).
 
@@ -16,17 +16,14 @@ Requiere PostgreSQL 14+ instalado (local o remoto):
 createdb dipolo
 psql -U postgres -d dipolo -f server/schema.sql
 ```
-Cargar sucursales y productos (hay seed de ejemplo comentado al final del schema).
 
-### 2. Servidor + usuarios
+### 2. Servidor
 ```bash
-cp .env.example .env   # completar DATABASE_URL y JWT_SECRET
+cp .env.example .env   # completar DATABASE_URL y JWT_SECRET (+ SMTP y APP_URL para los emails)
 npm install
-node server/create-user.ts dueno@dipolo.com clave123 admin
-node server/create-user.ts centro@dipolo.com clave123 encargado <uuid-sucursal>
 npm run dev:server     # API en http://localhost:3001
 ```
-Una cuenta por sucursal (login compartido del local) y la del dueño.
+Los usuarios se crean desde la app: registro → email de verificación → cuenta admin; el admin invita trabajadores por email a cada sucursal. Sin `SMTP_HOST` configurado, los links de verificación/invitación se imprimen en la consola del servidor (útil en dev). Para crear un admin sin email o resetear una contraseña: `node server/create-user.ts <email> <password>`.
 
 ### 3. Frontend (desarrollo)
 ```bash
@@ -51,7 +48,7 @@ HTTPS es requisito para PWA y push — poner un reverse proxy (Caddy/nginx/etc.)
 
 La API **solo inserta movimientos** en `stock_movements` (entrada, salida, merma, remito). Un trigger de Postgres actualiza `inventory` y genera alertas de stock crítico automáticamente. Otro trigger publica cada alerta por `NOTIFY`; el servidor Node la escucha y la reparte por SSE al dashboard y por Web Push. Para automatizar ventas a futuro, basta con insertar movimientos (nuevo tipo `'venta'` en el CHECK) desde cualquier origen — el stock y las alertas se mantienen solos.
 
-Los permisos por rol/sucursal se aplican en la API (`server/index.ts`): el encargado solo ve y escribe su sucursal; `stock_movements` no tiene update/delete (auditoría).
+Los permisos por rol/sucursal se aplican en la API (`server/index.ts`): todo se filtra por el admin dueño (multi-tenant), el encargado solo ve y escribe su sucursal, y `stock_movements` no tiene update/delete (auditoría). Cada movimiento queda firmado automáticamente con el nombre del usuario logueado.
 
 ## Remitos PDF
 
@@ -59,5 +56,5 @@ El parser (`src/lib/parseRemito.ts`) extrae líneas `PRODUCTO  CANTIDAD` del tex
 
 ## Roles
 
-- **Admin (dueño):** dashboard con stock consolidado de todas las sucursales, consola de alertas en tiempo real, filtros de movimientos (sucursal / producto / fecha / hora), push.
-- **Encargado:** pantalla mostrador (entradas, salidas, mermas con causa) y módulo remitos de su sucursal. Cada transacción exige el nombre de quien la hace (login compartido por local).
+- **Admin (dueño):** se registra solo (verificación de email). Dashboard con stock consolidado de sus sucursales, consola de alertas en tiempo real, filtros de movimientos (sucursal / producto / fecha / hora), push, y gestión: crear sucursales y productos, invitar/eliminar trabajadores.
+- **Encargado (trabajador):** entra por invitación del admin (elige su contraseña desde el link del email). Pantalla mostrador (entradas, salidas, mermas con causa) y módulo remitos, solo de su sucursal. Sus movimientos quedan firmados con su nombre.

@@ -30,7 +30,6 @@ export default function Remitos() {
   const [products, setProducts] = useState<Product[]>([])
   const [rows, setRows] = useState<Row[]>([])
   const [pdfName, setPdfName] = useState('')
-  const [manager, setManager] = useState('')
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -68,8 +67,8 @@ export default function Remitos() {
   // de desvío en una transacción.
   async function confirm() {
     const valid = rows.filter((r) => r.productId && r.actual !== '')
-    if (valid.length === 0 || !manager.trim()) {
-      setMsg('Asigná producto y conteo físico a cada fila, y completá el nombre del encargado.')
+    if (valid.length === 0) {
+      setMsg('Asigná producto y conteo físico a cada fila.')
       return
     }
     setBusy(true)
@@ -79,7 +78,6 @@ export default function Remitos() {
         method: 'POST',
         body: JSON.stringify({
           pdf_name: pdfName || 'carga manual',
-          manager_name: manager.trim(),
           items: valid.map((r) => ({
             product_id: r.productId,
             expected_qty: r.expected ?? Number(r.actual),
@@ -89,7 +87,6 @@ export default function Remitos() {
       })
       setRows([])
       setPdfName('')
-      setManager('')
       setMsg(
         remito.status === 'con_incongruencia'
           ? 'Remito guardado CON incongruencias — se notificó al administrador.'
@@ -177,22 +174,13 @@ export default function Remitos() {
       </button>
 
       {rows.length > 0 && (
-        <div className="flex gap-2 items-center">
-          <input
-            required
-            placeholder="Nombre del encargado"
-            value={manager}
-            onChange={(e) => setManager(e.target.value)}
-            className="border rounded-lg px-3 py-2 bg-white flex-1"
-          />
-          <button
-            onClick={confirm}
-            disabled={busy}
-            className="bg-amber-700 hover:bg-amber-800 text-white font-semibold rounded-lg px-4 py-2 disabled:opacity-50"
-          >
-            Confirmar conteo
-          </button>
-        </div>
+        <button
+          onClick={confirm}
+          disabled={busy}
+          className="bg-amber-700 hover:bg-amber-800 text-white font-semibold rounded-lg px-4 py-2 disabled:opacity-50"
+        >
+          Confirmar conteo
+        </button>
       )}
       {msg && <p className="text-sm text-amber-900 bg-amber-100 rounded-lg p-3">{msg}</p>}
     </div>

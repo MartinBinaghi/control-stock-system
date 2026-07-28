@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Bell, BellRing, Check, LogOut, RefreshCw } from 'lucide-react'
-import { api, getToken, type Alert, type Branch, type Product } from '../lib/api'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { Bell, BellRing, Check, LogOut, RefreshCw, Trash2 } from 'lucide-react'
+import { api, getToken, type Alert, type Branch, type Product, type Worker } from '../lib/api'
 
 type InvRow = { branch_id: string; product_id: string; current_stock: number }
 type Movement = {
@@ -99,7 +99,7 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
   return (
     <div className="min-h-screen bg-amber-50">
       <header className="bg-amber-700 text-white flex items-center justify-between px-4 py-3 shadow">
-        <h1 className="font-bold text-lg">Di Polo Pastas — Panel Administrador</h1>
+        <h1 className="font-bold text-lg">Control de Stock — Panel Administrador</h1>
         <div className="flex gap-2 items-center">
           <button
             onClick={enablePush}
@@ -240,7 +240,129 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
             </table>
           </div>
         </section>
+
+        <Gestion branches={branches} onChanged={load} />
       </main>
     </div>
+  )
+}
+
+// Alta de sucursales, productos e invitación de trabajadores por email.
+function Gestion({ branches, onChanged }: { branches: Branch[]; onChanged: () => void }) {
+  const [team, setTeam] = useState<Worker[]>([])
+  const [branch, setBranch] = useState({ name: '', address: '' })
+  const [product, setProduct] = useState({ name: '', category: '', unit: '', min: '' })
+  const [invite, setInvite] = useState({ name: '', email: '', branch_id: '' })
+  const [msg, setMsg] = useState('')
+
+  const loadTeam = useCallback(() => api<Worker[]>('/team').then(setTeam), [])
+  useEffect(() => {
+    loadTeam()
+  }, [loadTeam])
+
+  async function run(fn: () => Promise<unknown>, ok: string) {
+    setMsg('')
+    try {
+      await fn()
+      setMsg(ok)
+      onChanged()
+      loadTeam()
+    } catch (e) {
+      setMsg('Error: ' + (e as Error).message)
+    }
+  }
+
+  function addBranch(e: FormEvent) {
+    e.preventDefault()
+    run(async () => {
+      await api('/branches', { method: 'POST', body: JSON.stringify(branch) })
+      setBranch({ name: '', address: '' })
+    }, 'Sucursal creada.')
+  }
+
+  function addProduct(e: FormEvent) {
+    e.preventDefault()
+    run(async () => {
+      await api('/products', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: product.name,
+          category: product.category || null,
+          unit: product.unit,
+          min_stock_threshold: product.min === '' ? 0 : Number(product.min),
+        }),
+      })
+      setProduct({ name: '', category: '', unit: '', min: '' })
+    }, 'Producto creado.')
+  }
+
+  function sendInvite(e: FormEvent) {
+    e.preventDefault()
+    run(async () => {
+      await api('/invite', { method: 'POST', body: JSON.stringify(invite) })
+      setInvite({ name: '', email: '', branch_id: '' })
+    }, 'Invitación enviada por email.')
+  }
+
+  const input = 'border rounded-lg px-2 py-1.5 bg-white'
+  const btn = 'bg-amber-700 hover:bg-amber-800 text-white rounded-lg px-4 py-1.5'
+  const branchName = (id: string) => branches.find((b) => b.id === id)?.name ?? '—'
+
+  return (
+    <section>
+      <h2 className="font-bold text-amber-900 mb-2">Gestión</h2>
+      <div className="space-y-4 bg-white rounded-xl shadow-sm p-4">
+        <form onSubmit={addBranch} className="flex flex-wrap gap-2 items-center">
+          <span className="w-28 text-sm font-medium">Sucursal</span>
+          <input required placeholder="Nombre" value={branch.name} onChange={(e) => setBranch({ ...branch, name: e.target.value })} className={input} />
+          <input placeholder="Dirección" value={branch.address} onChange={(e) => setBranch({ ...branch, address: e.target.value })} className={input} />
+          <button className={btn}>Crear</button>
+        </form>
+
+        <form onSubmit={addProduct} className="flex flex-wrap gap-2 items-center">
+          <span className="w-28 text-sm font-medium">Producto</span>
+          <input required placeholder="Nombre" value={product.name} onChange={(e) => setProduct({ ...product, name: e.target.value })} className={input} />
+          <input placeholder="Categoría" value={product.category} onChange={(e) => setProduct({ ...product, category: e.target.value })} className={input} />
+          <input placeholder="Unidad (kg, plancha…)" value={product.unit} onChange={(e) => setProduct({ ...product, unit: e.target.value })} className={input} />
+          <input type="number" min="0" step="any" placeholder="Stock mínimo" value={product.min} onChange={(e) => setProduct({ ...product, min: e.target.value })} className={`${input} w-32`} />
+          <button className={btn}>Crear</button>
+        </form>
+
+        <form onSubmit={sendInvite} className="flex flex-wrap gap-2 items-center">
+          <span className="w-28 text-sm font-medium">Trabajador</span>
+          <input required placeholder="Nombre" value={invite.name} onChange={(e) => setInvite({ ...invite, name: e.target.value })} className={input} />
+          <input type="email" required placeholder="Email" value={invite.email} onChange={(e) => setInvite({ ...invite, email: e.target.value })} className={input} />
+          <select required value={invite.branch_id} onChange={(e) => setInvite({ ...invite, branch_id: e.target.value })} className={input}>
+            <option value="">Sucursal…</option>
+            {branches.map((b) => (
+              <option key={b.id} value={b.id}>{b.name}</option>
+            ))}
+          </select>
+          <button className={btn}>Invitar</button>
+        </form>
+
+        {msg && <p className="text-sm text-amber-900 bg-amber-100 rounded-lg p-2">{msg}</p>}
+
+        {team.length > 0 && (
+          <ul className="divide-y text-sm">
+            {team.map((w) => (
+              <li key={w.id} className="py-2 flex items-center justify-between gap-2">
+                <span>
+                  <span className="font-medium">{w.name}</span> · {w.email} · {branchName(w.branch_id)}
+                  {!w.verified && <span className="ml-2 text-xs text-orange-600 bg-orange-50 rounded px-1.5 py-0.5">invitación pendiente</span>}
+                </span>
+                <button
+                  title="Eliminar cuenta"
+                  onClick={() => confirm(`¿Eliminar la cuenta de ${w.name}?`) && run(() => api(`/team/${w.id}`, { method: 'DELETE' }), 'Cuenta eliminada.')}
+                  className="p-1.5 text-red-700 hover:bg-red-50 rounded-lg shrink-0"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
   )
 }

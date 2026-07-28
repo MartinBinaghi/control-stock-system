@@ -34,7 +34,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-amber-50">
       <header className="bg-amber-700 text-white flex items-center justify-between px-4 py-3 shadow">
-        <h1 className="font-bold text-lg">Di Polo Pastas</h1>
+        <h1 className="font-bold text-lg">Control de Stock</h1>
         <nav className="flex gap-2">
           <button
             onClick={() => setTab('mostrador')}

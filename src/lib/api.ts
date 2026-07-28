@@ -27,8 +27,17 @@ export async function api<T = unknown>(path: string, options: RequestInit = {}):
 export type Profile = {
   id: string
   email: string
+  name: string
   role: 'admin' | 'encargado'
   branch_id: string | null
+}
+
+export type Worker = {
+  id: string
+  email: string
+  name: string
+  branch_id: string
+  verified: boolean
 }
 
 export type Product = {
