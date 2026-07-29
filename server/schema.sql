@@ -1,8 +1,8 @@
 -- ============================================================
--- Di Polo Pastas — Control de Stock Multi-Sucursal
+-- Stockcito — Control de Stock Multi-Sucursal
 -- PostgreSQL 14+. Ejecutar completo:
---   psql -U postgres -d dipolo -f server/schema.sql
--- (crear antes la base: createdb dipolo)
+--   psql -U postgres -d stock_db -f server/schema.sql
+-- (crear antes la base: createdb stock_db)
 -- ============================================================
 
 -- ---------- Tablas ----------
@@ -127,7 +127,13 @@ begin
   select min_stock_threshold, name into threshold, pname
   from products where id = new.product_id;
 
-  if new_stock < threshold then
+  -- una sola alerta activa por producto+sucursal: sin esto, cada movimiento
+  -- bajo el umbral suma otra alerta casi idéntica y el panel se llena de ruido
+  if new_stock < threshold and not exists (
+    select 1 from alerts
+    where branch_id = new.branch_id and product_id = new.product_id
+      and type = 'stock_critico' and not resolved
+  ) then
     insert into alerts (branch_id, product_id, type, message)
     values (
       new.branch_id, new.product_id, 'stock_critico',

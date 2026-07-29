@@ -26,11 +26,13 @@ async function extractPdfText(file: File): Promise<string> {
   return text
 }
 
+type Msg = { text: string; kind: 'ok' | 'warn' | 'err' } | null
+
 export default function Remitos() {
   const [products, setProducts] = useState<Product[]>([])
   const [rows, setRows] = useState<Row[]>([])
   const [pdfName, setPdfName] = useState('')
-  const [msg, setMsg] = useState('')
+  const [msg, setMsg] = useState<Msg>(null)
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
@@ -38,7 +40,7 @@ export default function Remitos() {
   }, [])
 
   async function onFile(file: File) {
-    setMsg('')
+    setMsg(null)
     setPdfName(file.name)
     try {
       const text = await extractPdfText(file)
@@ -53,9 +55,9 @@ export default function Remitos() {
         })),
       )
       if (parsed.length === 0)
-        setMsg('No se detectaron ítems en el PDF. Cargá las filas manualmente.')
+        setMsg({ text: 'No se detectaron ítems en el PDF. Cargá las filas manualmente.', kind: 'warn' })
     } catch {
-      setMsg('No se pudo leer el PDF. Cargá las filas manualmente.')
+      setMsg({ text: 'No se pudo leer el PDF. Cargá las filas manualmente.', kind: 'err' })
     }
   }
 
@@ -68,11 +70,11 @@ export default function Remitos() {
   async function confirm() {
     const valid = rows.filter((r) => r.productId && r.actual !== '')
     if (valid.length === 0) {
-      setMsg('Asigná producto y conteo físico a cada fila.')
+      setMsg({ text: 'Asigná producto y conteo físico a cada fila.', kind: 'warn' })
       return
     }
     setBusy(true)
-    setMsg('')
+    setMsg(null)
     try {
       const remito = await api<{ status: string }>('/remitos', {
         method: 'POST',
@@ -89,13 +91,19 @@ export default function Remitos() {
       setPdfName('')
       setMsg(
         remito.status === 'con_incongruencia'
-          ? 'Remito guardado CON incongruencias — se notificó al administrador.'
-          : 'Remito guardado sin diferencias. Stock actualizado.',
+          ? { text: 'Remito guardado CON incongruencias — se notificó al administrador.', kind: 'warn' }
+          : { text: 'Remito guardado sin diferencias. Stock actualizado.', kind: 'ok' },
       )
     } catch (e) {
-      setMsg('Error al guardar el remito: ' + (e as Error).message)
+      setMsg({ text: 'Error al guardar el remito: ' + (e as Error).message, kind: 'err' })
     }
     setBusy(false)
+  }
+
+  const MSG_STYLE = {
+    ok: 'text-green-700 bg-green-50',
+    warn: 'text-amber-900 bg-amber-100',
+    err: 'text-red-700 bg-red-50',
   }
 
   return (
@@ -179,10 +187,10 @@ export default function Remitos() {
           disabled={busy}
           className="bg-amber-700 hover:bg-amber-800 text-white font-semibold rounded-lg px-4 py-2 disabled:opacity-50"
         >
-          Confirmar conteo
+          {busy ? 'Guardando…' : 'Confirmar conteo'}
         </button>
       )}
-      {msg && <p className="text-sm text-amber-900 bg-amber-100 rounded-lg p-3">{msg}</p>}
+      {msg && <p className={`text-sm rounded-lg p-3 ${MSG_STYLE[msg.kind]}`}>{msg.text}</p>}
     </div>
   )
 }

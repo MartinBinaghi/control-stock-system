@@ -1,6 +1,6 @@
 # Estado del proyecto — 28/07/2026
 
-Sistema de control de stock multi-sucursal (origen: Di Polo Pastas).
+**Stockcito** — sistema de control de stock multi-sucursal (origen: Di Polo Pastas; la marca provisoria "Stockcito" se adoptó el 28/07 al volverse producto genérico).
 Decisiones de diseño y contexto: ver `control-stock-propuesta.md` (propuesta original) y `README.md` (setup).
 
 **Cambio de arquitectura (27/07):** se eliminó la dependencia de Supabase. Ahora hay un backend propio en Node (Express) contra PostgreSQL — funciona 100% con una base local. Soporte de nube = apuntar `DATABASE_URL` a cualquier Postgres hosteado.
@@ -35,8 +35,8 @@ Los permisos que antes hacía RLS ahora viven en `server/index.ts` (wrapper `aut
 
 ## 🔜 Por hacer (en orden)
 
-1. **Base real**: hay PostgreSQL 18 corriendo en esta máquina (servicio `postgresql-x64-18`) pero falta la contraseña de `postgres` → `createdb dipolo` → correr `server/schema.sql`.
-2. **Arranque y prueba end-to-end**: `cp .env.example .env` (completar `DATABASE_URL` y `JWT_SECRET`; SMTP opcional — sin él los links salen por consola) → `npm run dev:server` + `npm run dev` → probar: registro + verificación, crear sucursal/producto, invitar trabajador, aceptar invitación, y aislamiento entre dos admins distintos.
+1. ~~**Base real**~~ ✅ hecho (28/07): base `stock_db` en el PostgreSQL 18 local, schema corrido, `.env` configurado, y datos de prueba cargados con `node server/seed.ts test@test.com` (admin `test@test.com`/`test1234`; encargados `lucia|carlos|sofia@dipolo.com`/`1234`).
+2. **Prueba end-to-end**: `npm run dev:server` + `npm run dev` → probar: registro + verificación (link por consola, sin SMTP), crear sucursal/producto, invitar trabajador, aceptar invitación, y aislamiento entre dos admins distintos.
 3. **Push**: `npx web-push generate-vapid-keys` → claves al `.env` → reiniciar servidor → activar notificaciones en el panel y forzar una alerta con la app cerrada.
 4. **Parser de remitos**: conseguir un **PDF real de la fábrica** y ajustar la regex de `src/lib/parseRemito.ts` (hoy asume líneas `PRODUCTO  CANTIDAD`). Actualizar `tests/parseRemito.test.ts` con texto del PDF real. Mientras tanto el módulo funciona con carga manual de filas.
 5. **Deploy**: `npm run build && npm start` en el servidor elegido (el mismo Express sirve API + frontend), con reverse proxy HTTPS adelante (requisito de PWA y push). Instalar la PWA en los locales — en iPhone el push requiere agregarla a pantalla de inicio (iOS 16.4+).
@@ -56,6 +56,7 @@ npm run dev                        # frontend con proxy a la API
 npm run build                      # typecheck app + server, build a dist/
 npm start                          # producción: API + frontend juntos
 node server/create-user.ts <email> <pass>   # admin verificado sin email / reset de contraseña
+node server/seed.ts <email-admin>  # datos de prueba (sucursales, productos, encargados, movimientos)
 node tests/auth.test.ts            # test de hash/verificación de contraseñas
 node tests/parseRemito.test.ts     # test del parser
 ```

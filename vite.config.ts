@@ -20,8 +20,8 @@ export default defineConfig({
       // sin precache. Si algún día se quiere offline, agregar workbox-precaching.
       injectManifest: { injectionPoint: undefined },
       manifest: {
-        name: 'Di Polo Pastas — Control de Stock',
-        short_name: 'Di Polo Stock',
+        name: 'Stockcito — Control de Stock',
+        short_name: 'Stockcito',
         description: 'Control de stock multi-sucursal',
         display: 'standalone',
         start_url: '/',

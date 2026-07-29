@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Bell, BellRing, Check, LogOut, RefreshCw, Trash2 } from 'lucide-react'
-import { api, getToken, type Alert, type Branch, type Product, type Worker } from '../lib/api'
+import { api, getToken, MOVEMENT_LABELS, type Alert, type Branch, type MovementType, type Product, type Worker } from '../lib/api'
 
 type InvRow = { branch_id: string; product_id: string; current_stock: number }
 type Movement = {
@@ -23,12 +23,19 @@ function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
   return out
 }
 
+// NUMERIC de Postgres llega como float: recorta artefactos (0.30000000000000004)
+const fmt = (n: number) => +n.toFixed(2)
+
+const typeLabel = (t: string) => MOVEMENT_LABELS[t as MovementType] ?? t.replace(/_/g, ' ')
+const reasonLabel = (r: string | null) => (r ? (r[0]!.toUpperCase() + r.slice(1)).replace(/_/g, ' ') : '')
+
 export default function Dashboard({ onLogout }: { onLogout: () => void }) {
   const [branches, setBranches] = useState<Branch[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [inventory, setInventory] = useState<InvRow[]>([])
   const [alerts, setAlerts] = useState<Alert[]>([])
-  const [movements, setMovements] = useState<Movement[]>([])
+  const [movements, setMovements] = useState<Movement[] | null>(null) // null = todavía no se buscó
+  const [searching, setSearching] = useState(false)
   const [pushOn, setPushOn] = useState(false)
   const [f, setF] = useState({ branch: '', product: '', from: '', to: '', hourFrom: '', hourTo: '' })
 
@@ -47,6 +54,11 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
 
   useEffect(() => {
     load()
+    // si ya hay una suscripción push en este navegador, reflejarla
+    navigator.serviceWorker?.ready
+      .then((r) => r.pushManager.getSubscription())
+      .then((s) => s && setPushOn(true))
+      .catch(() => {})
     // alertas en vivo por SSE (EventSource no admite headers → token en query)
     const es = new EventSource('/api/events?token=' + getToken())
     es.onmessage = (e) => setAlerts((a) => [JSON.parse(e.data) as Alert, ...a])
@@ -54,15 +66,20 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
   }, [load])
 
   async function loadMovements() {
-    const params = new URLSearchParams()
-    if (f.branch) params.set('branch', f.branch)
-    if (f.product) params.set('product', f.product)
-    if (f.from) params.set('from', f.from)
-    if (f.to) params.set('to', f.to)
-    let rows = await api<Movement[]>('/movements?' + params)
-    if (f.hourFrom) rows = rows.filter((m) => new Date(m.created_at).getHours() >= Number(f.hourFrom))
-    if (f.hourTo) rows = rows.filter((m) => new Date(m.created_at).getHours() <= Number(f.hourTo))
-    setMovements(rows)
+    setSearching(true)
+    try {
+      const params = new URLSearchParams()
+      if (f.branch) params.set('branch', f.branch)
+      if (f.product) params.set('product', f.product)
+      if (f.from) params.set('from', f.from)
+      if (f.to) params.set('to', f.to)
+      let rows = await api<Movement[]>('/movements?' + params)
+      if (f.hourFrom) rows = rows.filter((m) => new Date(m.created_at).getHours() >= Number(f.hourFrom))
+      if (f.hourTo) rows = rows.filter((m) => new Date(m.created_at).getHours() <= Number(f.hourTo))
+      setMovements(rows)
+    } finally {
+      setSearching(false)
+    }
   }
 
   async function resolveAlert(id: string) {
@@ -98,22 +115,26 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
 
   return (
     <div className="min-h-screen bg-amber-50">
-      <header className="bg-amber-700 text-white flex items-center justify-between px-4 py-3 shadow">
-        <h1 className="font-bold text-lg">Control de Stock — Panel Administrador</h1>
-        <div className="flex gap-2 items-center">
+      <header className="bg-amber-700 text-white flex items-center justify-between gap-2 px-4 py-2.5 shadow">
+        <div className="min-w-0">
+          <h1 className="font-bold text-lg leading-tight truncate">Stockcito</h1>
+          <p className="text-xs text-amber-200">Panel de administración</p>
+        </div>
+        <div className="flex gap-2 items-center shrink-0">
           <button
             onClick={enablePush}
             disabled={pushOn}
             title={pushOn ? 'Notificaciones activas' : 'Activar notificaciones'}
+            aria-label={pushOn ? 'Notificaciones activas' : 'Activar notificaciones'}
             className="flex items-center gap-1 px-3 py-1.5 rounded hover:bg-amber-800 disabled:opacity-70"
           >
             {pushOn ? <BellRing size={16} /> : <Bell size={16} />}
-            {pushOn ? 'Notificaciones ON' : 'Activar notificaciones'}
+            <span className="hidden sm:inline">{pushOn ? 'Notificaciones ON' : 'Activar notificaciones'}</span>
           </button>
-          <button onClick={load} title="Refrescar" className="p-2 hover:bg-amber-800 rounded">
+          <button onClick={load} title="Refrescar" aria-label="Refrescar" className="p-2 hover:bg-amber-800 rounded">
             <RefreshCw size={16} />
           </button>
-          <button onClick={onLogout} title="Salir" className="p-2 hover:bg-amber-800 rounded">
+          <button onClick={onLogout} title="Salir" aria-label="Salir" className="p-2 hover:bg-amber-800 rounded">
             <LogOut size={16} />
           </button>
         </div>
@@ -124,26 +145,30 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
           <h2 className="font-bold text-amber-900 mb-2">Alertas ({alerts.length})</h2>
           <ul className="space-y-2">
             {alerts.map((a) => (
-              <li
-                key={a.id}
-                className={`bg-white rounded-lg shadow-sm p-3 flex items-center justify-between gap-2 border-l-4 ${a.type === 'stock_critico' ? 'border-red-500' : 'border-orange-400'}`}
-              >
-                <div>
-                  <p className="text-sm">{a.message}</p>
-                  <p className="text-xs text-gray-400">
-                    {branchName(a.branch_id)} · {new Date(a.created_at).toLocaleString('es-AR')}
-                  </p>
+              <li key={a.id} className="bg-white rounded-lg shadow-sm p-3 flex items-center justify-between gap-2">
+                <div className="flex items-start gap-2.5">
+                  <span
+                    aria-hidden
+                    className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${a.type === 'stock_critico' ? 'bg-red-500' : 'bg-orange-400'}`}
+                  />
+                  <div>
+                    <p className="text-sm">{a.message}</p>
+                    <p className="text-xs text-gray-500">
+                      {branchName(a.branch_id)} · {new Date(a.created_at).toLocaleString('es-AR')}
+                    </p>
+                  </div>
                 </div>
                 <button
                   onClick={() => resolveAlert(a.id)}
                   title="Marcar resuelta"
+                  aria-label="Marcar alerta resuelta"
                   className="p-2 text-green-700 hover:bg-green-50 rounded-lg shrink-0"
                 >
                   <Check size={18} />
                 </button>
               </li>
             ))}
-            {alerts.length === 0 && <p className="text-gray-400 text-sm">Sin alertas pendientes.</p>}
+            {alerts.length === 0 && <p className="text-gray-500 text-sm">Sin alertas pendientes.</p>}
           </ul>
         </section>
 
@@ -170,40 +195,49 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
                         const s = stockOf(p.id, b.id)
                         return (
                           <td key={b.id} className={`p-2 ${s < p.min_stock_threshold ? 'text-red-600 font-semibold' : ''}`}>
-                            {s}
+                            {fmt(s)}
                           </td>
                         )
                       })}
-                      <td className="p-2 font-semibold">{total} {p.unit}</td>
+                      <td className="p-2 font-semibold">{fmt(total)} {p.unit}</td>
                     </tr>
                   )
                 })}
+                {products.length === 0 && (
+                  <tr>
+                    <td colSpan={branches.length + 2} className="p-4 text-center text-gray-500">
+                      Todavía no hay productos — crealos en la sección Gestión.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
         </section>
 
         <section>
-          <h2 className="font-bold text-amber-900 mb-2">Movimientos</h2>
+          <h2 className="font-bold text-amber-900 mb-2">
+            Movimientos{movements !== null && ` (${movements.length}${movements.length === 200 ? ', últimos 200' : ''})`}
+          </h2>
           <div className="flex flex-wrap gap-2 mb-2">
-            <select value={f.branch} onChange={(e) => setF({ ...f, branch: e.target.value })} className="border rounded-lg px-2 py-1.5 bg-white">
+            <select value={f.branch} onChange={(e) => setF({ ...f, branch: e.target.value })} aria-label="Filtrar por sucursal" className="border rounded-lg px-2 py-1.5 bg-white">
               <option value="">Todas las sucursales</option>
               {branches.map((b) => (
                 <option key={b.id} value={b.id}>{b.name}</option>
               ))}
             </select>
-            <select value={f.product} onChange={(e) => setF({ ...f, product: e.target.value })} className="border rounded-lg px-2 py-1.5 bg-white">
+            <select value={f.product} onChange={(e) => setF({ ...f, product: e.target.value })} aria-label="Filtrar por producto" className="border rounded-lg px-2 py-1.5 bg-white">
               <option value="">Todos los productos</option>
               {products.map((p) => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </select>
-            <input type="date" value={f.from} onChange={(e) => setF({ ...f, from: e.target.value })} className="border rounded-lg px-2 py-1.5 bg-white" />
-            <input type="date" value={f.to} onChange={(e) => setF({ ...f, to: e.target.value })} className="border rounded-lg px-2 py-1.5 bg-white" />
-            <input type="number" min="0" max="23" placeholder="Hora desde" value={f.hourFrom} onChange={(e) => setF({ ...f, hourFrom: e.target.value })} className="border rounded-lg px-2 py-1.5 bg-white w-28" />
-            <input type="number" min="0" max="23" placeholder="Hora hasta" value={f.hourTo} onChange={(e) => setF({ ...f, hourTo: e.target.value })} className="border rounded-lg px-2 py-1.5 bg-white w-28" />
-            <button onClick={loadMovements} className="bg-amber-700 hover:bg-amber-800 text-white rounded-lg px-4 py-1.5">
-              Buscar
+            <input type="date" value={f.from} onChange={(e) => setF({ ...f, from: e.target.value })} aria-label="Desde fecha" className="border rounded-lg px-2 py-1.5 bg-white" />
+            <input type="date" value={f.to} onChange={(e) => setF({ ...f, to: e.target.value })} aria-label="Hasta fecha" className="border rounded-lg px-2 py-1.5 bg-white" />
+            <input type="number" min="0" max="23" placeholder="Hora desde" value={f.hourFrom} onChange={(e) => setF({ ...f, hourFrom: e.target.value })} aria-label="Desde hora" className="border rounded-lg px-2 py-1.5 bg-white w-28" />
+            <input type="number" min="0" max="23" placeholder="Hora hasta" value={f.hourTo} onChange={(e) => setF({ ...f, hourTo: e.target.value })} aria-label="Hasta hora" className="border rounded-lg px-2 py-1.5 bg-white w-28" />
+            <button onClick={loadMovements} disabled={searching} className="bg-amber-700 hover:bg-amber-800 text-white rounded-lg px-4 py-1.5 disabled:opacity-50">
+              {searching ? 'Buscando…' : 'Buscar'}
             </button>
           </div>
           <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
@@ -220,20 +254,25 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
                 </tr>
               </thead>
               <tbody>
-                {movements.map((m) => (
+                {(movements ?? []).map((m) => (
                   <tr key={m.id} className="border-t">
                     <td className="p-2 whitespace-nowrap">{new Date(m.created_at).toLocaleString('es-AR')}</td>
                     <td className="p-2">{branchName(m.branch_id)}</td>
                     <td className="p-2">{productName(m.product_id)}</td>
-                    <td className="p-2">{m.type.replace('_', ' ')}</td>
-                    <td className="p-2">{m.quantity}</td>
+                    <td className="p-2">{typeLabel(m.type)}</td>
+                    <td className="p-2">{fmt(m.quantity)}</td>
                     <td className="p-2">{m.manager_name}</td>
-                    <td className="p-2">{m.reason ?? ''}</td>
+                    <td className="p-2">{reasonLabel(m.reason)}</td>
                   </tr>
                 ))}
-                {movements.length === 0 && (
+                {movements === null && (
                   <tr>
-                    <td colSpan={7} className="p-4 text-center text-gray-400">Usá los filtros y presioná Buscar.</td>
+                    <td colSpan={7} className="p-4 text-center text-gray-500">Usá los filtros y presioná Buscar.</td>
+                  </tr>
+                )}
+                {movements !== null && movements.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="p-4 text-center text-gray-500">Sin movimientos para esos filtros.</td>
                   </tr>
                 )}
               </tbody>
@@ -253,7 +292,7 @@ function Gestion({ branches, onChanged }: { branches: Branch[]; onChanged: () =>
   const [branch, setBranch] = useState({ name: '', address: '' })
   const [product, setProduct] = useState({ name: '', category: '', unit: '', min: '' })
   const [invite, setInvite] = useState({ name: '', email: '', branch_id: '' })
-  const [msg, setMsg] = useState('')
+  const [msg, setMsg] = useState<{ text: string; kind: 'ok' | 'err' } | null>(null)
 
   const loadTeam = useCallback(() => api<Worker[]>('/team').then(setTeam), [])
   useEffect(() => {
@@ -261,14 +300,14 @@ function Gestion({ branches, onChanged }: { branches: Branch[]; onChanged: () =>
   }, [loadTeam])
 
   async function run(fn: () => Promise<unknown>, ok: string) {
-    setMsg('')
+    setMsg(null)
     try {
       await fn()
-      setMsg(ok)
+      setMsg({ text: ok, kind: 'ok' })
       onChanged()
       loadTeam()
     } catch (e) {
-      setMsg('Error: ' + (e as Error).message)
+      setMsg({ text: 'Error: ' + (e as Error).message, kind: 'err' })
     }
   }
 
@@ -314,25 +353,25 @@ function Gestion({ branches, onChanged }: { branches: Branch[]; onChanged: () =>
       <div className="space-y-4 bg-white rounded-xl shadow-sm p-4">
         <form onSubmit={addBranch} className="flex flex-wrap gap-2 items-center">
           <span className="w-28 text-sm font-medium">Sucursal</span>
-          <input required placeholder="Nombre" value={branch.name} onChange={(e) => setBranch({ ...branch, name: e.target.value })} className={input} />
-          <input placeholder="Dirección" value={branch.address} onChange={(e) => setBranch({ ...branch, address: e.target.value })} className={input} />
+          <input required placeholder="Nombre" aria-label="Nombre de la sucursal" value={branch.name} onChange={(e) => setBranch({ ...branch, name: e.target.value })} className={input} />
+          <input placeholder="Dirección" aria-label="Dirección" value={branch.address} onChange={(e) => setBranch({ ...branch, address: e.target.value })} className={input} />
           <button className={btn}>Crear</button>
         </form>
 
         <form onSubmit={addProduct} className="flex flex-wrap gap-2 items-center">
           <span className="w-28 text-sm font-medium">Producto</span>
-          <input required placeholder="Nombre" value={product.name} onChange={(e) => setProduct({ ...product, name: e.target.value })} className={input} />
-          <input placeholder="Categoría" value={product.category} onChange={(e) => setProduct({ ...product, category: e.target.value })} className={input} />
-          <input placeholder="Unidad (kg, plancha…)" value={product.unit} onChange={(e) => setProduct({ ...product, unit: e.target.value })} className={input} />
-          <input type="number" min="0" step="any" placeholder="Stock mínimo" value={product.min} onChange={(e) => setProduct({ ...product, min: e.target.value })} className={`${input} w-32`} />
+          <input required placeholder="Nombre" aria-label="Nombre del producto" value={product.name} onChange={(e) => setProduct({ ...product, name: e.target.value })} className={input} />
+          <input placeholder="Categoría" aria-label="Categoría" value={product.category} onChange={(e) => setProduct({ ...product, category: e.target.value })} className={input} />
+          <input required placeholder="Unidad (kg, plancha…)" aria-label="Unidad" value={product.unit} onChange={(e) => setProduct({ ...product, unit: e.target.value })} className={input} />
+          <input type="number" min="0" step="any" placeholder="Stock mínimo" aria-label="Stock mínimo" value={product.min} onChange={(e) => setProduct({ ...product, min: e.target.value })} className={`${input} w-32`} />
           <button className={btn}>Crear</button>
         </form>
 
         <form onSubmit={sendInvite} className="flex flex-wrap gap-2 items-center">
           <span className="w-28 text-sm font-medium">Trabajador</span>
-          <input required placeholder="Nombre" value={invite.name} onChange={(e) => setInvite({ ...invite, name: e.target.value })} className={input} />
-          <input type="email" required placeholder="Email" value={invite.email} onChange={(e) => setInvite({ ...invite, email: e.target.value })} className={input} />
-          <select required value={invite.branch_id} onChange={(e) => setInvite({ ...invite, branch_id: e.target.value })} className={input}>
+          <input required placeholder="Nombre" aria-label="Nombre del trabajador" value={invite.name} onChange={(e) => setInvite({ ...invite, name: e.target.value })} className={input} />
+          <input type="email" required placeholder="Email" aria-label="Email del trabajador" value={invite.email} onChange={(e) => setInvite({ ...invite, email: e.target.value })} className={input} />
+          <select required value={invite.branch_id} aria-label="Sucursal del trabajador" onChange={(e) => setInvite({ ...invite, branch_id: e.target.value })} className={input}>
             <option value="">Sucursal…</option>
             {branches.map((b) => (
               <option key={b.id} value={b.id}>{b.name}</option>
@@ -341,7 +380,11 @@ function Gestion({ branches, onChanged }: { branches: Branch[]; onChanged: () =>
           <button className={btn}>Invitar</button>
         </form>
 
-        {msg && <p className="text-sm text-amber-900 bg-amber-100 rounded-lg p-2">{msg}</p>}
+        {msg && (
+          <p className={`text-sm rounded-lg p-2 ${msg.kind === 'ok' ? 'text-green-700 bg-green-50' : 'text-red-700 bg-red-50'}`}>
+            {msg.text}
+          </p>
+        )}
 
         {team.length > 0 && (
           <ul className="divide-y text-sm">
@@ -349,10 +392,11 @@ function Gestion({ branches, onChanged }: { branches: Branch[]; onChanged: () =>
               <li key={w.id} className="py-2 flex items-center justify-between gap-2">
                 <span>
                   <span className="font-medium">{w.name}</span> · {w.email} · {branchName(w.branch_id)}
-                  {!w.verified && <span className="ml-2 text-xs text-orange-600 bg-orange-50 rounded px-1.5 py-0.5">invitación pendiente</span>}
+                  {!w.verified && <span className="ml-2 text-xs text-orange-700 bg-orange-50 rounded px-1.5 py-0.5">invitación pendiente</span>}
                 </span>
                 <button
                   title="Eliminar cuenta"
+                  aria-label={`Eliminar cuenta de ${w.name}`}
                   onClick={() => confirm(`¿Eliminar la cuenta de ${w.name}?`) && run(() => api(`/team/${w.id}`, { method: 'DELETE' }), 'Cuenta eliminada.')}
                   className="p-1.5 text-red-700 hover:bg-red-50 rounded-lg shrink-0"
                 >

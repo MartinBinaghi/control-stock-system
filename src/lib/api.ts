@@ -1,7 +1,7 @@
 // Cliente de la API propia (server/index.ts). En dev, Vite proxya /api al
 // puerto 3001; en producción el mismo Express sirve el frontend.
 
-const TOKEN_KEY = 'dipolo_token'
+const TOKEN_KEY = 'stockcito_token'
 
 export const getToken = () => localStorage.getItem(TOKEN_KEY)
 export const setToken = (t: string) => localStorage.setItem(TOKEN_KEY, t)
@@ -61,3 +61,10 @@ export type Alert = {
 }
 
 export type MovementType = 'ingreso_manual' | 'egreso_manual' | 'merma' | 'remito_fabrica'
+
+export const MOVEMENT_LABELS: Record<MovementType, string> = {
+  ingreso_manual: 'Entrada',
+  egreso_manual: 'Salida',
+  merma: 'Merma',
+  remito_fabrica: 'Remito fábrica',
+}

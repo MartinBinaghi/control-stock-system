@@ -61,7 +61,7 @@ export default function Login({ onLogin }: { onLogin: (p: Profile) => void }) {
   return (
     <div className="min-h-screen bg-amber-50 flex items-center justify-center p-4">
       <form onSubmit={submit} className="bg-white rounded-xl shadow-lg p-8 w-full max-w-sm space-y-4">
-        <h1 className="text-2xl font-bold text-center text-amber-800">Control de Stock</h1>
+        <h1 className="text-2xl font-bold text-center text-amber-800">Stockcito</h1>
         <p className="text-sm text-gray-500 text-center">
           {mode === 'signup' ? 'Crear cuenta de administrador' : mode === 'invite' ? 'Elegí tu contraseña' : 'Iniciar sesión'}
         </p>
@@ -93,7 +93,7 @@ export default function Login({ onLogin }: { onLogin: (p: Profile) => void }) {
           onChange={(e) => setPassword(e.target.value)}
           className="w-full border rounded-lg px-3 py-2"
         />
-        {error && <p className="text-red-600 text-sm">{error}</p>}
+        {error && <p className="text-red-700 text-sm bg-red-50 rounded-lg p-2">{error}</p>}
         {notice && <p className="text-green-700 text-sm bg-green-50 rounded-lg p-2">{notice}</p>}
         <button
           disabled={busy}

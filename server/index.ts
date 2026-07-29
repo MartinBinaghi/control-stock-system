@@ -27,7 +27,7 @@ pool.on('error', console.error) // sin esto, un error de un cliente idle tumba e
 const pushEnabled = !!(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY)
 if (pushEnabled) {
   webpush.setVapidDetails(
-    process.env.VAPID_SUBJECT ?? 'mailto:admin@dipolo.com',
+    process.env.VAPID_SUBJECT ?? 'mailto:admin@stockcito.com',
     process.env.VAPID_PUBLIC_KEY!,
     process.env.VAPID_PRIVATE_KEY!,
   )

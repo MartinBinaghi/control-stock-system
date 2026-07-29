@@ -1,4 +1,4 @@
-# Control de Stock Multi-Sucursal
+# Stockcito — Control de Stock Multi-Sucursal
 
 PWA de control de stock multi-negocio: cualquier persona se registra (con verificación de email) y queda como administrador de su propio negocio — crea sucursales y productos e invita trabajadores por email a cada sucursal. Stock en tiempo real por sucursal, mermas, auditoría de movimientos, validación de remitos PDF y alertas con notificaciones push. Los datos de cada negocio están completamente aislados.
 
@@ -13,8 +13,8 @@ El backend es autocontenido: corre contra cualquier PostgreSQL (local, servidor 
 ### 1. Base de datos
 Requiere PostgreSQL 14+ instalado (local o remoto):
 ```bash
-createdb dipolo
-psql -U postgres -d dipolo -f server/schema.sql
+createdb stock_db
+psql -U postgres -d stock_db -f server/schema.sql
 ```
 
 ### 2. Servidor

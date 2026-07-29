@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { ArrowDownCircle, ArrowUpCircle, Trash2 } from 'lucide-react'
-import { api, type MovementType, type Product } from '../lib/api'
+import { api, MOVEMENT_LABELS, type MovementType, type Product } from '../lib/api'
 
 const MERMA_CAUSAS = ['Vencimiento', 'Cadena de frío', 'Rotura', 'Otro']
 
@@ -8,7 +8,7 @@ type Row = Product & { current_stock: number }
 type ModalState = { product: Row; type: MovementType } | null
 
 export default function Mostrador() {
-  const [rows, setRows] = useState<Row[]>([])
+  const [rows, setRows] = useState<Row[] | null>(null) // null = cargando
   const [modal, setModal] = useState<ModalState>(null)
   const [filter, setFilter] = useState('')
 
@@ -26,12 +26,14 @@ export default function Mostrador() {
     load()
   }, [load])
 
-  const visible = rows.filter((r) => r.name.toLowerCase().includes(filter.toLowerCase()))
+  const visible = (rows ?? []).filter((r) => r.name.toLowerCase().includes(filter.toLowerCase()))
 
   return (
     <div className="space-y-3">
       <input
+        type="search"
         placeholder="Buscar producto…"
+        aria-label="Buscar producto"
         value={filter}
         onChange={(e) => setFilter(e.target.value)}
         className="w-full border rounded-lg px-3 py-2 bg-white"
@@ -49,6 +51,7 @@ export default function Mostrador() {
             <div className="flex gap-1">
               <button
                 title="Entrada"
+                aria-label={`Entrada de ${r.name}`}
                 onClick={() => setModal({ product: r, type: 'ingreso_manual' })}
                 className="p-2 rounded-lg text-green-700 hover:bg-green-50"
               >
@@ -56,6 +59,7 @@ export default function Mostrador() {
               </button>
               <button
                 title="Salida"
+                aria-label={`Salida de ${r.name}`}
                 onClick={() => setModal({ product: r, type: 'egreso_manual' })}
                 className="p-2 rounded-lg text-blue-700 hover:bg-blue-50"
               >
@@ -63,6 +67,7 @@ export default function Mostrador() {
               </button>
               <button
                 title="Merma"
+                aria-label={`Merma de ${r.name}`}
                 onClick={() => setModal({ product: r, type: 'merma' })}
                 className="p-2 rounded-lg text-red-700 hover:bg-red-50"
               >
@@ -71,7 +76,14 @@ export default function Mostrador() {
             </div>
           </li>
         ))}
-        {visible.length === 0 && <p className="text-center text-gray-400 py-8">Sin productos</p>}
+        {rows === null && <p className="text-center text-gray-500 py-8">Cargando productos…</p>}
+        {rows !== null && visible.length === 0 && (
+          <p className="text-center text-gray-500 py-8">
+            {rows.length === 0
+              ? 'Todavía no hay productos. El administrador los crea desde su panel.'
+              : `Sin resultados para «${filter}».`}
+          </p>
+        )}
       </ul>
       {modal && (
         <MovementModal
@@ -101,8 +113,13 @@ function MovementModal({
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const isMerma = modal.type === 'merma'
-  const title =
-    modal.type === 'ingreso_manual' ? 'Entrada' : modal.type === 'egreso_manual' ? 'Salida' : 'Merma'
+  const title = MOVEMENT_LABELS[modal.type]
+
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [onClose])
 
   async function submit(e: FormEvent) {
     e.preventDefault()
@@ -130,6 +147,9 @@ function MovementModal({
       <form
         onSubmit={submit}
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${title} — ${modal.product.name}`}
         className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm space-y-3"
       >
         <h2 className="text-lg font-bold">
@@ -138,27 +158,34 @@ function MovementModal({
         <input
           type="number"
           required
+          autoFocus
           min="0.01"
           step="any"
           placeholder={`Cantidad (${modal.product.unit})`}
+          aria-label={`Cantidad en ${modal.product.unit}`}
           value={qty}
           onChange={(e) => setQty(e.target.value)}
           className="w-full border rounded-lg px-3 py-2"
         />
         {isMerma && (
-          <select value={causa} onChange={(e) => setCausa(e.target.value)} className="w-full border rounded-lg px-3 py-2">
+          <select
+            value={causa}
+            onChange={(e) => setCausa(e.target.value)}
+            aria-label="Causa de la merma"
+            className="w-full border rounded-lg px-3 py-2"
+          >
             {MERMA_CAUSAS.map((c) => (
               <option key={c}>{c}</option>
             ))}
           </select>
         )}
-        {error && <p className="text-red-600 text-sm">{error}</p>}
+        {error && <p className="text-red-700 text-sm bg-red-50 rounded-lg p-2">{error}</p>}
         <div className="flex gap-2 justify-end">
           <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg hover:bg-gray-100">
             Cancelar
           </button>
           <button disabled={busy} className="px-4 py-2 rounded-lg bg-amber-700 hover:bg-amber-800 text-white disabled:opacity-50">
-            Guardar
+            {busy ? 'Guardando…' : 'Guardar'}
           </button>
         </div>
       </form>

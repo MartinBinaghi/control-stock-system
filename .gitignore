@@ -6,3 +6,6 @@ dev-dist/
 .agents/
 .claude/
 skills-lock.json
+.impeccable/
+PRODUCT.md
+
