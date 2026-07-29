@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { Bell, BellRing, Check, LogOut, RefreshCw, Trash2 } from 'lucide-react'
-import { api, getToken, MOVEMENT_LABELS, type Alert, type Branch, type MovementType, type Product, type Worker } from '../lib/api'
+import { Bell, BellRing, Check, LogOut, RefreshCw, Trash2, Pencil } from 'lucide-react'
+import { api, getToken, updateProduct, MOVEMENT_LABELS, type Alert, type Branch, type MovementType, type Product, type Worker } from '../lib/api'
 
 type InvRow = { branch_id: string; product_id: string; current_stock: number }
 type Movement = {
@@ -38,6 +38,7 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
   const [searching, setSearching] = useState(false)
   const [pushOn, setPushOn] = useState(false)
   const [f, setF] = useState({ branch: '', product: '', from: '', to: '', hourFrom: '', hourTo: '' })
+  const [editing, setEditing] = useState<Product | null>(null)
 
   const load = useCallback(async () => {
     const [b, p, inv, al] = await Promise.all([
@@ -190,7 +191,17 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
                   const total = branches.reduce((s, b) => s + stockOf(p.id, b.id), 0)
                   return (
                     <tr key={p.id} className="border-t">
-                      <td className="p-2 font-medium">{p.name}</td>
+                      <td className="p-2 font-medium flex items-center gap-1.5">
+                        {p.name}
+                        <button
+                          onClick={() => setEditing(p)}
+                          title="Editar producto"
+                          aria-label={`Editar ${p.name}`}
+                          className="p-1 text-amber-700 hover:bg-amber-50 rounded"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                      </td>
                       {branches.map((b) => {
                         const s = stockOf(p.id, b.id)
                         return (
@@ -282,6 +293,68 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
 
         <Gestion branches={branches} onChanged={load} />
       </main>
+      {editing && (
+        <EditProductModal
+          product={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null)
+            load()
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+function EditProductModal({ product, onClose, onSaved }: { product: Product; onClose: () => void; onSaved: () => void }) {
+  const [form, setForm] = useState({
+    name: product.name,
+    category: product.category ?? '',
+    unit: product.unit,
+    min: String(product.min_stock_threshold),
+  })
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      await updateProduct(product.id, {
+        name: form.name.trim(),
+        category: form.category.trim() || null,
+        unit: form.unit,
+        min_stock_threshold: form.min === '' ? 0 : Number(form.min),
+      })
+      onSaved()
+    } catch (e) {
+      setError((e as Error).message)
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-10" onClick={onClose}>
+      <form
+        onSubmit={submit}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm space-y-3"
+      >
+        <h2 className="text-lg font-bold">Editar producto</h2>
+        <input required placeholder="Nombre" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full border rounded-lg px-3 py-2" />
+        <input placeholder="Categoría" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="w-full border rounded-lg px-3 py-2" />
+        <input required placeholder="Unidad (kg, plancha…)" value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} className="w-full border rounded-lg px-3 py-2" />
+        <input type="number" min="0" step="any" placeholder="Stock mínimo" value={form.min} onChange={(e) => setForm({ ...form, min: e.target.value })} className="w-full border rounded-lg px-3 py-2" />
+        {error && <p className="text-red-600 text-sm">{error}</p>}
+        <div className="flex gap-2 justify-end">
+          <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg hover:bg-gray-100">Cancelar</button>
+          <button disabled={busy} className="px-4 py-2 rounded-lg bg-amber-700 hover:bg-amber-800 text-white disabled:opacity-50">
+            {busy ? 'Guardando…' : 'Guardar'}
+          </button>
+        </div>
+      </form>
     </div>
   )
 }

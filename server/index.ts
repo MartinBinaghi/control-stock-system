@@ -198,6 +198,19 @@ app.post('/api/products', authed(async (user, req, res) => {
   res.json(r.rows[0])
 }))
 
+app.patch('/api/products/:id', authed(async (user, req, res) => {
+  if (user.role !== 'admin') return void res.status(403).json({ error: 'Solo admin' })
+  const { name, category, unit, min_stock_threshold } = req.body ?? {}
+  if (!String(name ?? '').trim()) return void res.status(400).json({ error: 'Falta el nombre' })
+  const r = await pool.query(
+    `update products set name = $1, category = $2, unit = coalesce(nullif($3, ''), 'unidad'), min_stock_threshold = coalesce($4, 0)
+     where id = $5 and owner_id = $6 returning *`,
+    [String(name).trim(), category || null, unit, min_stock_threshold, req.params.id, user.id],
+  )
+  if (!r.rows[0]) return void res.status(404).json({ error: 'Producto no encontrado' })
+  res.json(r.rows[0])
+}))
+
 // ---------- Equipo (trabajadores del admin) ----------
 
 app.get('/api/team', authed(async (user, _req, res) => {
