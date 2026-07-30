@@ -25,8 +25,8 @@ export default defineConfig({
         description: 'Control de stock multi-sucursal',
         display: 'standalone',
         start_url: '/',
-        theme_color: '#b45309',
-        background_color: '#fffbeb',
+        theme_color: '#151210',
+        background_color: '#151210',
         icons: [
           { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
