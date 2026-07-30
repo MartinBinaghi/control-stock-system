@@ -179,6 +179,7 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
             <table className="w-full text-sm">
               <thead className="bg-amber-100 text-left">
                 <tr>
+                  <th className="p-2 w-20"></th>
                   <th className="p-2">Producto</th>
                   {branches.map((b) => (
                     <th key={b.id} className="p-2">{b.name}</th>
@@ -191,16 +192,16 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
                   const total = branches.reduce((s, b) => s + stockOf(p.id, b.id), 0)
                   return (
                     <tr key={p.id} className="border-t">
-                      <td className="p-2 font-medium flex items-center gap-1.5">
-                        {p.name}
-                        <button
-                          onClick={() => setEditing(p)}
-                          title="Editar producto"
-                          aria-label={`Editar ${p.name}`}
-                          className="p-1 text-amber-700 hover:bg-amber-50 rounded"
-                        >
-                          <Pencil size={14} />
-                        </button>
+                      <td className="p-2">
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => setEditing(p)}
+                            title="Editar producto"
+                            aria-label={`Editar ${p.name}`}
+                            className="p-1 text-amber-700 hover:bg-amber-50 rounded"
+                          >
+                            <Pencil size={14} />
+                          </button>
                           <button
                             onClick={() => confirm(`¿Eliminar "${p.name}"? No se borra el historial, solo deja de aparecer en las listas.`) &&
                               deleteProduct(p.id).then(load)}
@@ -210,7 +211,9 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
                           >
                             <Trash2 size={14} />
                           </button>
+                        </div>
                       </td>
+                      <td className="p-2 font-medium">{p.name}</td>
                       {branches.map((b) => {
                         const s = stockOf(p.id, b.id)
                         return (
