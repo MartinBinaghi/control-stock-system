@@ -101,15 +101,15 @@ export default function Remitos() {
   }
 
   const MSG_STYLE = {
-    ok: 'text-green-700 bg-green-50',
-    warn: 'text-amber-900 bg-amber-100',
-    err: 'text-red-700 bg-red-50',
+    ok: 'text-ok bg-ok-soft border-ok/40',
+    warn: 'text-warn bg-warn-soft border-warn/40',
+    err: 'text-danger bg-danger-soft border-danger/40',
   }
 
   return (
     <div className="space-y-4">
-      <label className="flex items-center justify-center gap-2 border-2 border-dashed border-amber-300 rounded-xl p-6 bg-white cursor-pointer hover:bg-amber-50">
-        <Upload size={20} className="text-amber-700" />
+      <label className="flex items-center justify-center gap-2 border-2 border-dashed border-line rounded-md p-6 bg-surface cursor-pointer hover:border-accent hover:text-accent transition-colors duration-150">
+        <Upload size={20} className="text-accent" />
         <span>{pdfName || 'Subir remito PDF de la fábrica'}</span>
         <input
           type="file"
@@ -120,9 +120,9 @@ export default function Remitos() {
       </label>
 
       {rows.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
+        <div className="panel overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-amber-100 text-left">
+            <thead className="bg-sunken text-left font-pixel border-b-2 border-line">
               <tr>
                 <th className="p-2">Producto</th>
                 <th className="p-2">Esperado</th>
@@ -133,12 +133,12 @@ export default function Remitos() {
               {rows.map((r, i) => {
                 const diff = r.actual !== '' && r.expected !== null && Number(r.actual) !== r.expected
                 return (
-                  <tr key={i} className={diff ? 'bg-red-50' : ''}>
+                  <tr key={i} className={diff ? 'bg-danger-soft' : ''}>
                     <td className="p-2">
                       <select
                         value={r.productId ?? ''}
                         onChange={(e) => setRow(i, { productId: e.target.value || null })}
-                        className={`border rounded px-2 py-1 w-full ${!r.productId ? 'border-red-400' : ''}`}
+                        className={`input px-2 py-1 w-full ${!r.productId ? 'border-danger' : ''}`}
                       >
                         <option value="">— {r.rawName || 'elegir producto'} —</option>
                         {products.map((p) => (
@@ -154,7 +154,7 @@ export default function Remitos() {
                         step="any"
                         value={r.expected ?? ''}
                         onChange={(e) => setRow(i, { expected: e.target.value === '' ? null : Number(e.target.value) })}
-                        className="border rounded px-2 py-1 w-24"
+                        className="input px-2 py-1 w-24 tabular-nums"
                       />
                     </td>
                     <td className="p-2">
@@ -163,7 +163,7 @@ export default function Remitos() {
                         step="any"
                         value={r.actual}
                         onChange={(e) => setRow(i, { actual: e.target.value })}
-                        className={`border rounded px-2 py-1 w-24 ${diff ? 'border-red-500 text-red-700 font-semibold' : ''}`}
+                        className={`input px-2 py-1 w-24 tabular-nums ${diff ? 'border-danger text-danger font-semibold' : ''}`}
                       />
                     </td>
                   </tr>
@@ -176,21 +176,17 @@ export default function Remitos() {
 
       <button
         onClick={() => setRows((rs) => [...rs, { productId: null, rawName: '', expected: null, actual: '' }])}
-        className="flex items-center gap-1 text-amber-800 hover:underline"
+        className="flex items-center gap-1 text-accent hover:underline cursor-pointer"
       >
         <Plus size={16} /> Agregar fila manual
       </button>
 
       {rows.length > 0 && (
-        <button
-          onClick={confirm}
-          disabled={busy}
-          className="bg-amber-700 hover:bg-amber-800 text-white font-semibold rounded-lg px-4 py-2 disabled:opacity-50"
-        >
+        <button onClick={confirm} disabled={busy} className="btn btn-primary">
           {busy ? 'Guardando…' : 'Confirmar conteo'}
         </button>
       )}
-      {msg && <p className={`text-sm rounded-lg p-3 ${MSG_STYLE[msg.kind]}`}>{msg.text}</p>}
+      {msg && <p className={`text-sm rounded-md border-2 p-3 ${MSG_STYLE[msg.kind]}`}>{msg.text}</p>}
     </div>
   )
 }
