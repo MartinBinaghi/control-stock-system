@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Bell, BellRing, Check, LogOut, RefreshCw, Trash2 } from 'lucide-react'
 import { api, getToken, MOVEMENT_LABELS, type Alert, type Branch, type MovementType, type Product, type Worker } from '../lib/api'
+import Carpi, { CarpiHead } from '../components/Carpi'
+import ThemeToggle from '../components/ThemeToggle'
 
 type InvRow = { branch_id: string; product_id: string; current_stock: number }
 type Movement = {
@@ -113,28 +115,36 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
   const stockOf = (productId: string, branchId: string) =>
     inventory.find((i) => i.product_id === productId && i.branch_id === branchId)?.current_stock ?? 0
 
+  const iconBtn = 'p-2 rounded-md cursor-pointer text-soft hover:text-ink hover:bg-sunken'
+  const sectionTitle = 'font-pixel font-bold text-lg mb-2'
+  const th = 'p-2 font-pixel font-medium'
+
   return (
-    <div className="min-h-screen bg-amber-50">
-      <header className="bg-amber-700 text-white flex items-center justify-between gap-2 px-4 py-2.5 shadow">
-        <div className="min-w-0">
-          <h1 className="font-bold text-lg leading-tight truncate">Stockcito</h1>
-          <p className="text-xs text-amber-200">Panel de administración</p>
+    <div className="min-h-screen">
+      <header className="bg-surface border-b-2 border-line flex items-center justify-between gap-2 px-4 py-2.5">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <CarpiHead size={42} />
+          <div className="min-w-0">
+            <h1 className="font-pixel font-bold text-lg leading-tight text-accent truncate">STOCKCITO</h1>
+            <p className="text-xs text-soft">Panel de administración</p>
+          </div>
         </div>
-        <div className="flex gap-2 items-center shrink-0">
+        <div className="flex gap-1.5 items-center shrink-0">
           <button
             onClick={enablePush}
             disabled={pushOn}
             title={pushOn ? 'Notificaciones activas' : 'Activar notificaciones'}
             aria-label={pushOn ? 'Notificaciones activas' : 'Activar notificaciones'}
-            className="flex items-center gap-1 px-3 py-1.5 rounded hover:bg-amber-800 disabled:opacity-70"
+            className={`${iconBtn} flex items-center gap-1 disabled:opacity-70 disabled:pointer-events-none`}
           >
             {pushOn ? <BellRing size={16} /> : <Bell size={16} />}
-            <span className="hidden sm:inline">{pushOn ? 'Notificaciones ON' : 'Activar notificaciones'}</span>
+            <span className="hidden sm:inline text-sm">{pushOn ? 'Notificaciones ON' : 'Activar notificaciones'}</span>
           </button>
-          <button onClick={load} title="Refrescar" aria-label="Refrescar" className="p-2 hover:bg-amber-800 rounded">
+          <button onClick={load} title="Refrescar" aria-label="Refrescar" className={iconBtn}>
             <RefreshCw size={16} />
           </button>
-          <button onClick={onLogout} title="Salir" aria-label="Salir" className="p-2 hover:bg-amber-800 rounded">
+          <ThemeToggle />
+          <button onClick={onLogout} title="Salir" aria-label="Salir" className={iconBtn}>
             <LogOut size={16} />
           </button>
         </div>
@@ -142,18 +152,18 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
 
       <main className="max-w-6xl mx-auto p-4 space-y-6">
         <section>
-          <h2 className="font-bold text-amber-900 mb-2">Alertas ({alerts.length})</h2>
+          <h2 className={sectionTitle}>Alertas ({alerts.length})</h2>
           <ul className="space-y-2">
             {alerts.map((a) => (
-              <li key={a.id} className="bg-white rounded-lg shadow-sm p-3 flex items-center justify-between gap-2">
+              <li key={a.id} className="panel p-3 flex items-center justify-between gap-2">
                 <div className="flex items-start gap-2.5">
                   <span
                     aria-hidden
-                    className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${a.type === 'stock_critico' ? 'bg-red-500' : 'bg-orange-400'}`}
+                    className={`mt-1.5 w-2 h-2 shrink-0 ${a.type === 'stock_critico' ? 'bg-danger' : 'bg-accent'}`}
                   />
                   <div>
                     <p className="text-sm">{a.message}</p>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-soft">
                       {branchName(a.branch_id)} · {new Date(a.created_at).toLocaleString('es-AR')}
                     </p>
                   </div>
@@ -162,39 +172,44 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
                   onClick={() => resolveAlert(a.id)}
                   title="Marcar resuelta"
                   aria-label="Marcar alerta resuelta"
-                  className="p-2 text-green-700 hover:bg-green-50 rounded-lg shrink-0"
+                  className="p-2 text-ok hover:bg-ok-soft rounded-md shrink-0 cursor-pointer"
                 >
                   <Check size={18} />
                 </button>
               </li>
             ))}
-            {alerts.length === 0 && <p className="text-gray-500 text-sm">Sin alertas pendientes.</p>}
+            {alerts.length === 0 && (
+              <li className="flex items-center gap-3 text-soft text-sm list-none">
+                <Carpi size={56} title="Carpi tranquilo, sin alertas" />
+                <p>Sin alertas pendientes. Carpi está tranquilo.</p>
+              </li>
+            )}
           </ul>
         </section>
 
         <section>
-          <h2 className="font-bold text-amber-900 mb-2">Stock consolidado</h2>
-          <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
+          <h2 className={sectionTitle}>Stock consolidado</h2>
+          <div className="panel overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-amber-100 text-left">
+              <thead className="bg-sunken text-left border-b-2 border-line">
                 <tr>
-                  <th className="p-2">Producto</th>
+                  <th className={th}>Producto</th>
                   {branches.map((b) => (
-                    <th key={b.id} className="p-2">{b.name}</th>
+                    <th key={b.id} className={th}>{b.name}</th>
                   ))}
-                  <th className="p-2">Total</th>
+                  <th className={th}>Total</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="tabular-nums">
                 {products.map((p) => {
                   const total = branches.reduce((s, b) => s + stockOf(p.id, b.id), 0)
                   return (
-                    <tr key={p.id} className="border-t">
+                    <tr key={p.id} className="border-t border-line/50">
                       <td className="p-2 font-medium">{p.name}</td>
                       {branches.map((b) => {
                         const s = stockOf(p.id, b.id)
                         return (
-                          <td key={b.id} className={`p-2 ${s < p.min_stock_threshold ? 'text-red-600 font-semibold' : ''}`}>
+                          <td key={b.id} className={`p-2 ${s < p.min_stock_threshold ? 'text-danger font-semibold' : ''}`}>
                             {fmt(s)}
                           </td>
                         )
@@ -205,7 +220,7 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
                 })}
                 {products.length === 0 && (
                   <tr>
-                    <td colSpan={branches.length + 2} className="p-4 text-center text-gray-500">
+                    <td colSpan={branches.length + 2} className="p-4 text-center text-soft">
                       Todavía no hay productos — crealos en la sección Gestión.
                     </td>
                   </tr>
@@ -216,63 +231,63 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
         </section>
 
         <section>
-          <h2 className="font-bold text-amber-900 mb-2">
+          <h2 className={sectionTitle}>
             Movimientos{movements !== null && ` (${movements.length}${movements.length === 200 ? ', últimos 200' : ''})`}
           </h2>
           <div className="flex flex-wrap gap-2 mb-2">
-            <select value={f.branch} onChange={(e) => setF({ ...f, branch: e.target.value })} aria-label="Filtrar por sucursal" className="border rounded-lg px-2 py-1.5 bg-white">
+            <select value={f.branch} onChange={(e) => setF({ ...f, branch: e.target.value })} aria-label="Filtrar por sucursal" className="input px-2 py-1.5">
               <option value="">Todas las sucursales</option>
               {branches.map((b) => (
                 <option key={b.id} value={b.id}>{b.name}</option>
               ))}
             </select>
-            <select value={f.product} onChange={(e) => setF({ ...f, product: e.target.value })} aria-label="Filtrar por producto" className="border rounded-lg px-2 py-1.5 bg-white">
+            <select value={f.product} onChange={(e) => setF({ ...f, product: e.target.value })} aria-label="Filtrar por producto" className="input px-2 py-1.5">
               <option value="">Todos los productos</option>
               {products.map((p) => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </select>
-            <input type="date" value={f.from} onChange={(e) => setF({ ...f, from: e.target.value })} aria-label="Desde fecha" className="border rounded-lg px-2 py-1.5 bg-white" />
-            <input type="date" value={f.to} onChange={(e) => setF({ ...f, to: e.target.value })} aria-label="Hasta fecha" className="border rounded-lg px-2 py-1.5 bg-white" />
-            <input type="number" min="0" max="23" placeholder="Hora desde" value={f.hourFrom} onChange={(e) => setF({ ...f, hourFrom: e.target.value })} aria-label="Desde hora" className="border rounded-lg px-2 py-1.5 bg-white w-28" />
-            <input type="number" min="0" max="23" placeholder="Hora hasta" value={f.hourTo} onChange={(e) => setF({ ...f, hourTo: e.target.value })} aria-label="Hasta hora" className="border rounded-lg px-2 py-1.5 bg-white w-28" />
-            <button onClick={loadMovements} disabled={searching} className="bg-amber-700 hover:bg-amber-800 text-white rounded-lg px-4 py-1.5 disabled:opacity-50">
+            <input type="date" value={f.from} onChange={(e) => setF({ ...f, from: e.target.value })} aria-label="Desde fecha" className="input px-2 py-1.5" />
+            <input type="date" value={f.to} onChange={(e) => setF({ ...f, to: e.target.value })} aria-label="Hasta fecha" className="input px-2 py-1.5" />
+            <input type="number" min="0" max="23" placeholder="Hora desde" value={f.hourFrom} onChange={(e) => setF({ ...f, hourFrom: e.target.value })} aria-label="Desde hora" className="input px-2 py-1.5 w-28" />
+            <input type="number" min="0" max="23" placeholder="Hora hasta" value={f.hourTo} onChange={(e) => setF({ ...f, hourTo: e.target.value })} aria-label="Hasta hora" className="input px-2 py-1.5 w-28" />
+            <button onClick={loadMovements} disabled={searching} className="btn btn-primary px-4 py-1.5">
               {searching ? 'Buscando…' : 'Buscar'}
             </button>
           </div>
-          <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
+          <div className="panel overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-amber-100 text-left">
+              <thead className="bg-sunken text-left border-b-2 border-line">
                 <tr>
-                  <th className="p-2">Fecha</th>
-                  <th className="p-2">Sucursal</th>
-                  <th className="p-2">Producto</th>
-                  <th className="p-2">Tipo</th>
-                  <th className="p-2">Cantidad</th>
-                  <th className="p-2">Encargado</th>
-                  <th className="p-2">Motivo</th>
+                  <th className={th}>Fecha</th>
+                  <th className={th}>Sucursal</th>
+                  <th className={th}>Producto</th>
+                  <th className={th}>Tipo</th>
+                  <th className={th}>Cantidad</th>
+                  <th className={th}>Encargado</th>
+                  <th className={th}>Motivo</th>
                 </tr>
               </thead>
               <tbody>
                 {(movements ?? []).map((m) => (
-                  <tr key={m.id} className="border-t">
+                  <tr key={m.id} className="border-t border-line/50">
                     <td className="p-2 whitespace-nowrap">{new Date(m.created_at).toLocaleString('es-AR')}</td>
                     <td className="p-2">{branchName(m.branch_id)}</td>
                     <td className="p-2">{productName(m.product_id)}</td>
                     <td className="p-2">{typeLabel(m.type)}</td>
-                    <td className="p-2">{fmt(m.quantity)}</td>
+                    <td className="p-2 tabular-nums">{fmt(m.quantity)}</td>
                     <td className="p-2">{m.manager_name}</td>
                     <td className="p-2">{reasonLabel(m.reason)}</td>
                   </tr>
                 ))}
                 {movements === null && (
                   <tr>
-                    <td colSpan={7} className="p-4 text-center text-gray-500">Usá los filtros y presioná Buscar.</td>
+                    <td colSpan={7} className="p-4 text-center text-soft">Usá los filtros y presioná Buscar.</td>
                   </tr>
                 )}
                 {movements !== null && movements.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="p-4 text-center text-gray-500">Sin movimientos para esos filtros.</td>
+                    <td colSpan={7} className="p-4 text-center text-soft">Sin movimientos para esos filtros.</td>
                   </tr>
                 )}
               </tbody>
@@ -343,23 +358,23 @@ function Gestion({ branches, onChanged }: { branches: Branch[]; onChanged: () =>
     }, 'Invitación enviada por email.')
   }
 
-  const input = 'border rounded-lg px-2 py-1.5 bg-white'
-  const btn = 'bg-amber-700 hover:bg-amber-800 text-white rounded-lg px-4 py-1.5'
+  const input = 'input px-2 py-1.5'
+  const btn = 'btn btn-primary px-4 py-1.5'
   const branchName = (id: string) => branches.find((b) => b.id === id)?.name ?? '—'
 
   return (
     <section>
-      <h2 className="font-bold text-amber-900 mb-2">Gestión</h2>
-      <div className="space-y-4 bg-white rounded-xl shadow-sm p-4">
+      <h2 className="font-pixel font-bold text-lg mb-2">Gestión</h2>
+      <div className="space-y-4 card p-4">
         <form onSubmit={addBranch} className="flex flex-wrap gap-2 items-center">
-          <span className="w-28 text-sm font-medium">Sucursal</span>
+          <span className="w-28 text-sm font-pixel">Sucursal</span>
           <input required placeholder="Nombre" aria-label="Nombre de la sucursal" value={branch.name} onChange={(e) => setBranch({ ...branch, name: e.target.value })} className={input} />
           <input placeholder="Dirección" aria-label="Dirección" value={branch.address} onChange={(e) => setBranch({ ...branch, address: e.target.value })} className={input} />
           <button className={btn}>Crear</button>
         </form>
 
         <form onSubmit={addProduct} className="flex flex-wrap gap-2 items-center">
-          <span className="w-28 text-sm font-medium">Producto</span>
+          <span className="w-28 text-sm font-pixel">Producto</span>
           <input required placeholder="Nombre" aria-label="Nombre del producto" value={product.name} onChange={(e) => setProduct({ ...product, name: e.target.value })} className={input} />
           <input placeholder="Categoría" aria-label="Categoría" value={product.category} onChange={(e) => setProduct({ ...product, category: e.target.value })} className={input} />
           <input required placeholder="Unidad (kg, plancha…)" aria-label="Unidad" value={product.unit} onChange={(e) => setProduct({ ...product, unit: e.target.value })} className={input} />
@@ -368,7 +383,7 @@ function Gestion({ branches, onChanged }: { branches: Branch[]; onChanged: () =>
         </form>
 
         <form onSubmit={sendInvite} className="flex flex-wrap gap-2 items-center">
-          <span className="w-28 text-sm font-medium">Trabajador</span>
+          <span className="w-28 text-sm font-pixel">Trabajador</span>
           <input required placeholder="Nombre" aria-label="Nombre del trabajador" value={invite.name} onChange={(e) => setInvite({ ...invite, name: e.target.value })} className={input} />
           <input type="email" required placeholder="Email" aria-label="Email del trabajador" value={invite.email} onChange={(e) => setInvite({ ...invite, email: e.target.value })} className={input} />
           <select required value={invite.branch_id} aria-label="Sucursal del trabajador" onChange={(e) => setInvite({ ...invite, branch_id: e.target.value })} className={input}>
@@ -381,24 +396,24 @@ function Gestion({ branches, onChanged }: { branches: Branch[]; onChanged: () =>
         </form>
 
         {msg && (
-          <p className={`text-sm rounded-lg p-2 ${msg.kind === 'ok' ? 'text-green-700 bg-green-50' : 'text-red-700 bg-red-50'}`}>
+          <p className={`text-sm rounded-md border-2 p-2 ${msg.kind === 'ok' ? 'text-ok bg-ok-soft border-ok/40' : 'text-danger bg-danger-soft border-danger/40'}`}>
             {msg.text}
           </p>
         )}
 
         {team.length > 0 && (
-          <ul className="divide-y text-sm">
+          <ul className="divide-y divide-line/50 text-sm">
             {team.map((w) => (
               <li key={w.id} className="py-2 flex items-center justify-between gap-2">
                 <span>
                   <span className="font-medium">{w.name}</span> · {w.email} · {branchName(w.branch_id)}
-                  {!w.verified && <span className="ml-2 text-xs text-orange-700 bg-orange-50 rounded px-1.5 py-0.5">invitación pendiente</span>}
+                  {!w.verified && <span className="ml-2 text-xs text-warn bg-warn-soft rounded px-1.5 py-0.5">invitación pendiente</span>}
                 </span>
                 <button
                   title="Eliminar cuenta"
                   aria-label={`Eliminar cuenta de ${w.name}`}
                   onClick={() => confirm(`¿Eliminar la cuenta de ${w.name}?`) && run(() => api(`/team/${w.id}`, { method: 'DELETE' }), 'Cuenta eliminada.')}
-                  className="p-1.5 text-red-700 hover:bg-red-50 rounded-lg shrink-0"
+                  className="p-1.5 text-danger hover:bg-danger-soft rounded-md shrink-0 cursor-pointer"
                 >
                   <Trash2 size={16} />
                 </button>
