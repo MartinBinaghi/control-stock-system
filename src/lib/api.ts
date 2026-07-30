@@ -72,3 +72,7 @@ export const MOVEMENT_LABELS: Record<MovementType, string> = {
 export function updateProduct(id: string, data: Partial<Pick<Product, 'name' | 'category' | 'unit' | 'min_stock_threshold'>>) {
   return api<Product>(`/products/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
 }
+
+export function deleteProduct(id: string) {
+  return api(`/products/${id}`, { method: 'DELETE' })
+}

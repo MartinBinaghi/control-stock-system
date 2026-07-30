@@ -183,7 +183,7 @@ app.post('/api/branches', authed(async (user, req, res) => {
 }))
 
 app.get('/api/products', authed(async (user, _req, res) => {
-  res.json((await pool.query('select * from products where owner_id = $1 order by name', [tenantOf(user)])).rows)
+  res.json((await pool.query('select * from products where owner_id = $1 and active order by name', [tenantOf(user)])).rows)
 }))
 
 app.post('/api/products', authed(async (user, req, res) => {
@@ -209,6 +209,16 @@ app.patch('/api/products/:id', authed(async (user, req, res) => {
   )
   if (!r.rows[0]) return void res.status(404).json({ error: 'Producto no encontrado' })
   res.json(r.rows[0])
+}))
+
+app.delete('/api/products/:id', authed(async (user, req, res) => {
+  if (user.role !== 'admin') return void res.status(403).json({ error: 'Solo admin' })
+  const r = await pool.query(
+    'update products set active = false where id = $1 and owner_id = $2 returning id',
+    [req.params.id, user.id],
+  )
+  if (!r.rows[0]) return void res.status(404).json({ error: 'Producto no encontrado' })
+  res.json({ ok: true })
 }))
 
 // ---------- Equipo (trabajadores del admin) ----------

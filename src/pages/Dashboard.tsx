@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Bell, BellRing, Check, LogOut, RefreshCw, Trash2, Pencil } from 'lucide-react'
-import { api, getToken, updateProduct, MOVEMENT_LABELS, type Alert, type Branch, type MovementType, type Product, type Worker } from '../lib/api'
+import { api, getToken, deleteProduct, updateProduct, MOVEMENT_LABELS, type Alert, type Branch, type MovementType, type Product, type Worker } from '../lib/api'
 
 type InvRow = { branch_id: string; product_id: string; current_stock: number }
 type Movement = {
@@ -201,6 +201,15 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
                         >
                           <Pencil size={14} />
                         </button>
+                          <button
+                            onClick={() => confirm(`¿Eliminar "${p.name}"? No se borra el historial, solo deja de aparecer en las listas.`) &&
+                              deleteProduct(p.id).then(load)}
+                            title="Eliminar producto"
+                            aria-label={`Eliminar ${p.name}`}
+                            className="p-1 text-red-700 hover:bg-red-50 rounded"
+                          >
+                            <Trash2 size={14} />
+                          </button>
                       </td>
                       {branches.map((b) => {
                         const s = stockOf(p.id, b.id)
