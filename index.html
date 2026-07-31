@@ -3,10 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#b45309" />
+    <meta name="theme-color" content="#151210" />
     <link rel="icon" href="/icons/icon-192.png" />
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
     <title>Stockcito — Control de Stock</title>
+    <script>
+      // antes del primer paint para evitar flash de tema; oscuro por defecto
+      const t = localStorage.getItem('theme')
+      document.documentElement.classList.toggle('dark', t ? t === 'dark' : true)
+    </script>
   </head>
   <body>
     <div id="root"></div>
