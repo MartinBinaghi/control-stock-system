@@ -194,9 +194,8 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
             <table className="w-full text-sm">
               <thead className="bg-sunken text-left border-b-2 border-line">
                 <tr>
-                  <th className={th}>Producto</th>
                   <th className="p-2 w-20"></th>
-                  <th className="p-2">Producto</th>
+                  <th className={th}>Producto</th>
                   {branches.map((b) => (
                     <th key={b.id} className={th}>{b.name}</th>
                   ))}
@@ -208,7 +207,6 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
                   const total = branches.reduce((s, b) => s + stockOf(p.id, b.id), 0)
                   return (
                     <tr key={p.id} className="border-t border-line/50">
-                    <tr key={p.id} className="border-t">
                       <td className="p-2">
                         <div className="flex items-center gap-1.5">
                           <button
