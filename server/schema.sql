@@ -41,6 +41,7 @@ create table products (
   category text,
   unit text not null default 'unidad',
   min_stock_threshold numeric not null default 0,
+  active boolean not null default true,
   created_at timestamptz not null default now()
 );
 

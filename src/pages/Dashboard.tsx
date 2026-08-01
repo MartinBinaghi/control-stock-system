@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { Bell, BellRing, Check, LogOut, RefreshCw, Trash2 } from 'lucide-react'
-import { api, getToken, MOVEMENT_LABELS, type Alert, type Branch, type MovementType, type Product, type Worker } from '../lib/api'
+import { Bell, BellRing, Check, LogOut, RefreshCw, Trash2, Pencil } from 'lucide-react'
+import { api, getToken, deleteProduct, updateProduct, MOVEMENT_LABELS, type Alert, type Branch, type MovementType, type Product, type Worker } from '../lib/api'
 import Carpi, { CarpiHead } from '../components/Carpi'
 import ThemeToggle from '../components/ThemeToggle'
 
@@ -40,6 +40,7 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
   const [searching, setSearching] = useState(false)
   const [pushOn, setPushOn] = useState(false)
   const [f, setF] = useState({ branch: '', product: '', from: '', to: '', hourFrom: '', hourTo: '' })
+  const [editing, setEditing] = useState<Product | null>(null)
 
   const load = useCallback(async () => {
     const [b, p, inv, al] = await Promise.all([
@@ -193,6 +194,7 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
             <table className="w-full text-sm">
               <thead className="bg-sunken text-left border-b-2 border-line">
                 <tr>
+                  <th className="p-2 w-20"></th>
                   <th className={th}>Producto</th>
                   {branches.map((b) => (
                     <th key={b.id} className={th}>{b.name}</th>
@@ -205,6 +207,27 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
                   const total = branches.reduce((s, b) => s + stockOf(p.id, b.id), 0)
                   return (
                     <tr key={p.id} className="border-t border-line/50">
+                      <td className="p-2">
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => setEditing(p)}
+                            title="Editar producto"
+                            aria-label={`Editar ${p.name}`}
+                            className="p-1.5 text-soft hover:bg-sunken rounded-md cursor-pointer"
+                          >
+                            <Pencil size={14} />
+                          </button>
+                          <button
+                            onClick={() => confirm(`¿Eliminar "${p.name}"? No se borra el historial, solo deja de aparecer en las listas.`) &&
+                              deleteProduct(p.id).then(load)}
+                            title="Eliminar producto"
+                            aria-label={`Eliminar ${p.name}`}
+                            className="p-1.5 text-danger hover:bg-danger-soft rounded-md cursor-pointer"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
                       <td className="p-2 font-medium">{p.name}</td>
                       {branches.map((b) => {
                         const s = stockOf(p.id, b.id)
@@ -297,6 +320,68 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
 
         <Gestion branches={branches} onChanged={load} />
       </main>
+      {editing && (
+        <EditProductModal
+          product={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null)
+            load()
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+function EditProductModal({ product, onClose, onSaved }: { product: Product; onClose: () => void; onSaved: () => void }) {
+  const [form, setForm] = useState({
+    name: product.name,
+    category: product.category ?? '',
+    unit: product.unit,
+    min: String(product.min_stock_threshold),
+  })
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      await updateProduct(product.id, {
+        name: form.name.trim(),
+        category: form.category.trim() || null,
+        unit: form.unit,
+        min_stock_threshold: form.min === '' ? 0 : Number(form.min),
+      })
+      onSaved()
+    } catch (e) {
+      setError((e as Error).message)
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-10" onClick={onClose}>
+      <form
+        onSubmit={submit}
+        onClick={(e) => e.stopPropagation()}
+        className="card p-6 w-full max-w-sm space-y-3"
+      >
+        <h2 className="font-pixel text-lg">Editar producto</h2>
+        <input required placeholder="Nombre" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="input w-full px-3 py-2" />
+        <input placeholder="Categoría" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="input w-full px-3 py-2" />
+        <input required placeholder="Unidad (kg, plancha…)" value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} className="input w-full px-3 py-2" />
+        <input type="number" min="0" step="any" placeholder="Stock mínimo" value={form.min} onChange={(e) => setForm({ ...form, min: e.target.value })} className="input w-full px-3 py-2" />
+        {error && <p className="text-danger text-sm">{error}</p>}
+        <div className="flex gap-2 justify-end">
+          <button type="button" onClick={onClose} className="btn btn-ghost px-4 py-1.5">Cancelar</button>
+          <button disabled={busy} className="btn btn-primary px-4 py-1.5">
+            {busy ? 'Guardando…' : 'Guardar'}
+          </button>
+        </div>
+      </form>
     </div>
   )
 }
