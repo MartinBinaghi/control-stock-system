@@ -298,11 +298,26 @@ app.post('/api/movements', authed(async (user, req, res) => {
 }))
 
 app.get('/api/movements', authed(async (user, req, res) => {
-  if (user.role !== 'admin') return void res.status(403).json({ error: 'Solo admin' })
   const { branch, product, from, to } = req.query
-  const cond: string[] = [`branch_id in (${tenantBranches()})`]
-  const params: unknown[] = [user.id]
-  if (branch) { params.push(branch); cond.push(`branch_id = $${params.length}`) }
+  const cond: string[] = []
+  const params: unknown[] = []
+
+  if (user.role === 'admin') {
+    cond.push(`branch_id in (${tenantBranches()})`)
+    params.push(user.id)
+  } else {
+    // Encargado: solo su sucursal
+    cond.push('branch_id = $1')
+    params.push(user.branch_id)
+  }
+
+  if (branch) {
+    // Admin puede filtrar por sucursal específica; encargado ignora este filtro
+    if (user.role === 'admin') {
+      params.push(branch)
+      cond.push(`branch_id = $${params.length}`)
+    }
+  }
   if (product) { params.push(product); cond.push(`product_id = $${params.length}`) }
   if (from) { params.push(from); cond.push(`created_at >= $${params.length}`) }
   if (to) { params.push(to + 'T23:59:59'); cond.push(`created_at <= $${params.length}`) }
@@ -359,7 +374,46 @@ app.post('/api/remitos', authed(async (user, req, res) => {
   }
 }))
 
-// ---------- Push ----------
+
+// Historial de remitos (admin: todas sus sucursales; encargado: solo la suya)
+app.get('/api/remitos', authed(async (user, _req, res) => {
+  let q = `
+    select r.*, b.name as branch_name
+    from remitos r
+    join branches b on b.id = r.branch_id
+  `
+  const params: unknown[] = []
+  if (user.role === 'admin') {
+    q += ` where r.branch_id in (${tenantBranches()})`
+    params.push(user.id)
+  } else {
+    q += ' where r.branch_id = $1'
+    params.push(user.branch_id)
+  }
+  q += ' order by r.created_at desc limit 100'
+  const r = await pool.query(q, params)
+  res.json(r.rows)
+}))
+
+// Items de un remito
+app.get('/api/remitos/:id/items', authed(async (user, req, res) => {
+  const remito = (await pool.query('select branch_id from remitos where id = $1', [req.params.id])).rows[0]
+  if (!remito) return void res.status(404).json({ error: 'Remito no encontrado' })
+  const owns = user.role === 'admin'
+    ? (await pool.query('select 1 from branches where id = $1 and owner_id = $2', [remito.branch_id, user.id])).rows[0]
+    : remito.branch_id === user.branch_id
+  if (!owns) return void res.status(403).json({ error: 'No autorizado' })
+
+  const items = await pool.query(
+    `select ri.*, p.name as product_name, p.unit
+     from remito_items ri
+     join products p on p.id = ri.product_id
+     where ri.remito_id = $1`,
+    [req.params.id],
+  )
+  res.json(items.rows)
+}))
+
 
 app.get('/api/vapid-public-key', (_req, res) => {
   res.json({ key: process.env.VAPID_PUBLIC_KEY ?? null })
