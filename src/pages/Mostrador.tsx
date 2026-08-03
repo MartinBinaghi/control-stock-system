@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import { ArrowDownCircle, ArrowUpCircle, Trash2, Clock, CheckCircle, XCircle, Plus } from 'lucide-react'
+import { ArrowDownCircle, ArrowUpCircle, Trash2, Clock, CheckCircle, XCircle, Plus, X } from 'lucide-react'
 import { api, getMovements, MOVEMENT_LABELS, type MovementType, type Product, type Movement } from '../lib/api'
 import Carpi from '../components/Carpi'
 
@@ -31,6 +31,7 @@ export default function Mostrador() {
   const [recentMovements, setRecentMovements] = useState<RecentMovement[]>([])
   const [shiftSummary, setShiftSummary] = useState<{ entradas: number; salidas: number; mermas: number }>({ entradas: 0, salidas: 0, mermas: 0 })
   const [undoToast, setUndoToast] = useState<{ movement: Movement; timeout: ReturnType<typeof setTimeout> } | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const listRef = useRef<HTMLUListElement>(null)
 
   const load = useCallback(async () => {
@@ -99,6 +100,18 @@ export default function Mostrador() {
           e.preventDefault()
           openBatchMode()
           break
+        case ' ':
+          e.preventDefault()
+          {
+            const row = visibleRows[focusedIndex]
+            setSelectedIds((prev) => {
+              const next = new Set(prev)
+              if (next.has(row.id)) next.delete(row.id)
+              else next.add(row.id)
+              return next
+            })
+          }
+          break
       }
     }
     window.addEventListener('keydown', handleKeyDown)
@@ -115,11 +128,11 @@ export default function Mostrador() {
   const visible = (rows ?? []).filter((r) => r.name.toLowerCase().includes(filter.toLowerCase()))
 
   function openBatchMode() {
-    const selected = visible.filter((_, i) => i === focusedIndex)
-    if (selected.length > 0) {
+    const selectedProducts = visible.filter((r) => selectedIds.has(r.id))
+    if (selectedProducts.length > 0) {
       const entries = new Map<string, { qty: string; causa: string }>()
-      selected.forEach((p) => entries.set(p.id, { qty: '', causa: MERMA_CAUSAS[0] }))
-      setBatchModal({ products: selected, entries })
+      selectedProducts.forEach((p) => entries.set(p.id, { qty: '', causa: MERMA_CAUSAS[0] }))
+      setBatchModal({ products: selectedProducts, entries })
     }
   }
 
@@ -196,11 +209,22 @@ export default function Mostrador() {
           >
             <XCircle size={16} /> Fin
           </button>
+          {selectedIds.size > 0 && (
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              title="Limpiar selección"
+              className="btn btn-ghost px-3 text-warn"
+              aria-label={`Limpiar selección (${selectedIds.size} productos)`}
+            >
+              <X size={16} /> Limpiar
+            </button>
+          )}
           <button
             onClick={openBatchMode}
+            disabled={selectedIds.size === 0}
             title="Entrada múltiple (B)"
             className="btn btn-ghost px-3"
-            aria-label="Modo lote"
+            aria-label={`Modo lote${selectedIds.size > 0 ? ` (${selectedIds.size} seleccionados)` : ''}`}
           >
             <Plus size={16} /> Lote
           </button>
@@ -229,34 +253,46 @@ export default function Mostrador() {
       <main className="flex-1 min-h-0 flex gap-3 lg:gap-4 overflow-hidden">
         {/* Left: Product list */}
         <section className="flex-1 min-w-0 lg:max-w-2xl flex flex-col overflow-hidden">
-          <ul ref={listRef} className="space-y-1.5 flex-1 overflow-y-auto pr-1" role="listbox" aria-label="Productos">
-            {visible.map((r, idx) => (
-              <li
-                key={r.id}
-                data-row-index={idx}
-                className={`panel p-2.5 flex items-center justify-between gap-2 transition-colors duration-100 ${
-                  idx === focusedIndex ? 'ring-2 ring-accent ring-offset-2 ring-offset-surface' : ''
-                }`}
-                role="option"
-                aria-selected={idx === focusedIndex}
-                onClick={() => setFocusedIndex(idx)}
-                onDoubleClick={() => setModal({ product: r, type: 'ingreso_manual' })}
-              >
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium truncate">{r.name}</p>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className={`text-xs tabular-nums ${r.current_stock < r.min_stock_threshold ? 'text-danger font-semibold' : 'text-soft'}`}>
-                      Stock: {r.current_stock} {r.unit}
-                      {r.current_stock < r.min_stock_threshold && ' — ¡crítico!'}
-                    </span>
-                    <div className="flex-1 max-w-xs h-1 bg-sunken rounded-full overflow-hidden">
-                      <div
-                        className={`h-full transition-all duration-300 ${r.current_stock < r.min_stock_threshold ? 'bg-danger' : 'bg-ok'}`}
-                        style={{ width: `${Math.min(100, (r.current_stock / Math.max(1, r.min_stock_threshold * 2)) * 100)}%` }}
-                      />
-                    </div>
+          <ul ref={listRef} className="space-y-1.5 flex-1 overflow-y-auto pr-1 pl-2 pt-2" role="listbox" aria-label="Productos">
+            {visible.map((r, idx) => {
+              const isSelected = selectedIds.has(r.id)
+              return (
+                <li
+                  key={r.id}
+                  data-row-index={idx}
+                  className={`panel p-2.5 flex items-center justify-between gap-2 transition-colors duration-100 ${
+                    idx === focusedIndex ? 'ring-2 ring-accent ring-offset-2 ring-offset-surface' : ''
+                  } ${isSelected ? 'bg-accent-soft border-accent' : ''}`}
+                  role="option"
+                  aria-selected={idx === focusedIndex}
+                  aria-checked={isSelected}
+                  onClick={() => setFocusedIndex(idx)}
+                  onDoubleClick={() => setModal({ product: r, type: 'ingreso_manual' })}
+                >
+                  <label className="flex items-center cursor-pointer min-w-[40px] select-none" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => {
+                        setSelectedIds((prev) => {
+                          const next = new Set(prev)
+                          if (next.has(r.id)) next.delete(r.id)
+                          else next.add(r.id)
+                          return next
+                        })
+                      }}
+                      className="w-4 h-4 accent-accent border-2 border-line rounded cursor-pointer"
+                      aria-label={`Seleccionar ${r.name}`}
+                    />
+                  </label>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium truncate">{r.name}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                        <span className={`tabular-nums font-mono ${r.current_stock < r.min_stock_threshold ? 'text-danger font-semibold' : 'text-ok font-semibold'}`}>
+                          {r.current_stock} {r.unit}
+                        </span>
+                      </div>
                   </div>
-                </div>
                 <div className="flex gap-0.5 shrink-0">
                   <button
                     title="Entrada (E)"
@@ -284,7 +320,8 @@ export default function Mostrador() {
                   </button>
                 </div>
               </li>
-            ))}
+            )
+            })}
             {rows === null && (
               <li className="text-center text-soft py-8 list-none">Cargando productos…</li>
             )}
@@ -324,11 +361,7 @@ export default function Mostrador() {
                 </thead>
                 <tbody>
                   {recentMovements.map((m) => (
-                    <tr key={m.id} className="border-t border-line/50 hover:bg-sunken/50 cursor-pointer"
-                      onClick={() => {
-                        const product = rows?.find((p) => p.id === m.product_id)
-                        if (product) setModal({ product, type: m.type as MovementType })
-                      }}>
+                    <tr key={m.id} className="border-t border-line/50 hover:bg-sunken/50">
                       <td className="p-1.5 whitespace-nowrap text-soft">{new Date(m.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</td>
                       <td className="p-1.5 truncate max-w-[140px] font-medium">{m.product_name}</td>
                       <td className="p-1.5">
@@ -400,11 +433,7 @@ export default function Mostrador() {
               </thead>
               <tbody>
                 {recentMovements.slice(0, 20).map((m) => (
-                  <tr key={m.id} className="border-t border-line/50 hover:bg-sunken/50 cursor-pointer"
-                    onClick={() => {
-                      const product = rows?.find((p) => p.id === m.product_id)
-                      if (product) setModal({ product, type: m.type as MovementType })
-                    }}>
+                  <tr key={m.id} className="border-t border-line/50 hover:bg-sunken/50">
                     <td className="p-1.5 whitespace-nowrap text-soft">{new Date(m.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</td>
                     <td className="p-1.5 truncate max-w-[120px] font-medium">{m.product_name}</td>
                     <td className="p-1.5">
@@ -524,8 +553,8 @@ function MovementModal({
           type="number"
           required
           autoFocus
-          min="0.01"
-          step="any"
+          min="1"
+          step="1"
           placeholder={`Cantidad (${modal.product.unit})`}
           aria-label={`Cantidad en ${modal.product.unit}`}
           value={qty}
@@ -652,8 +681,8 @@ function BatchMovementModal({
                 </div>
                 <input
                   type="number"
-                  min="0.01"
-                  step="any"
+                  min="1"
+                  step="1"
                   placeholder={`Cant. (${p.unit})`}
                   value={entry.qty}
                   onChange={(e) => updateQty(p.id, e.target.value)}
