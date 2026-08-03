@@ -40,39 +40,83 @@ export type Worker = {
   verified: boolean
 }
 
+export type Process = { id: string; name: string }
+
+export type RecipeItem = { ingredient_id: string; quantity: number }
+
 export type Product = {
   id: string
   name: string
   category: string | null
   unit: string
   min_stock_threshold: number
+  process_id: string | null
+  is_raw_material: boolean
+  recipe: RecipeItem[]
 }
 
-export type Branch = { id: string; name: string }
+export type Branch = { id: string; name: string; address: string | null }
 
 export type Alert = {
   id: string
   branch_id: string
   product_id: string
-  type: 'stock_critico' | 'desvio_remito'
+  type: 'stock_critico' | 'desvio_remito' | 'insumo_negativo'
   message: string
   resolved: boolean
   created_at: string
 }
 
-export type MovementType = 'ingreso_manual' | 'egreso_manual' | 'merma' | 'remito_fabrica'
+export type MovementType = 'ingreso_manual' | 'egreso_manual' | 'merma' | 'remito_fabrica' | 'produccion' | 'consumo_produccion'
 
 export const MOVEMENT_LABELS: Record<MovementType, string> = {
   ingreso_manual: 'Entrada',
   egreso_manual: 'Salida',
   merma: 'Merma',
   remito_fabrica: 'Remito fábrica',
+  produccion: 'Producción',
+  consumo_produccion: 'Consumo (producción)',
 }
 
-export function updateProduct(id: string, data: Partial<Pick<Product, 'name' | 'category' | 'unit' | 'min_stock_threshold'>>) {
+export function updateProduct(
+  id: string,
+  data: Partial<Pick<Product, 'name' | 'category' | 'unit' | 'min_stock_threshold' | 'process_id' | 'is_raw_material'>> & { recipe?: RecipeItem[] },
+) {
   return api<Product>(`/products/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+}
+
+export function createProcess(name: string) {
+  return api<Process>('/processes', { method: 'POST', body: JSON.stringify({ name }) })
+}
+
+export function updateProcess(id: string, name: string) {
+  return api<Process>(`/processes/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) })
+}
+
+export function deleteProcess(id: string) {
+  return api(`/processes/${id}`, { method: 'DELETE' })
+}
+
+export function produce(data: { product_id: string; quantity: number; branch_id?: string; force?: boolean }) {
+  return api<{ ok: true }>('/production', { method: 'POST', body: JSON.stringify(data) })
 }
 
 export function deleteProduct(id: string) {
   return api(`/products/${id}`, { method: 'DELETE' })
+}
+
+export function createAlert(data: { branch_id: string; product_id: string; type: Alert['type']; message: string }) {
+  return api<Alert>('/alerts', { method: 'POST', body: JSON.stringify(data) })
+}
+
+export function updateBranch(id: string, data: { name: string; address: string | null }) {
+  return api<Branch>(`/branches/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+}
+
+export function deleteBranch(id: string) {
+  return api(`/branches/${id}`, { method: 'DELETE' })
+}
+
+export function resendInvite(id: string) {
+  return api(`/team/${id}/resend`, { method: 'POST' })
 }

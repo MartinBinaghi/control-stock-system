@@ -28,7 +28,8 @@ async function extractPdfText(file: File): Promise<string> {
 
 type Msg = { text: string; kind: 'ok' | 'warn' | 'err' } | null
 
-export default function Remitos() {
+// branchId: ver comentario en Mostrador.tsx.
+export default function Remitos({ branchId }: { branchId?: string } = {}) {
   const [products, setProducts] = useState<Product[]>([])
   const [rows, setRows] = useState<Row[]>([])
   const [pdfName, setPdfName] = useState('')
@@ -85,6 +86,7 @@ export default function Remitos() {
             expected_qty: r.expected ?? Number(r.actual),
             actual_qty: Number(r.actual),
           })),
+          ...(branchId ? { branch_id: branchId } : {}),
         }),
       })
       setRows([])

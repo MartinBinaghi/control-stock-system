@@ -34,6 +34,16 @@ create table users (
 
 alter table branches add foreign key (owner_id) references users on delete cascade;
 
+-- Etapas de fabricación (ej: "Materia prima", "Panadería"). Un producto
+-- pertenece a lo sumo a un proceso; si no fabrica nada (no es materia prima
+-- ni se fabrica) simplemente no tiene proceso asignado.
+create table processes (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null references users on delete cascade,
+  name text not null,
+  created_at timestamptz not null default now()
+);
+
 create table products (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null references users on delete cascade,
@@ -42,7 +52,19 @@ create table products (
   unit text not null default 'unidad',
   min_stock_threshold numeric not null default 0,
   active boolean not null default true,
+  process_id uuid references processes,
+  is_raw_material boolean not null default true,
   created_at timestamptz not null default now()
+);
+
+-- Receta de un producto fabricado (is_raw_material = false): qué productos
+-- de OTROS procesos consume por cada unidad producida.
+create table product_recipes (
+  id uuid primary key default gen_random_uuid(),
+  product_id uuid not null references products on delete cascade,
+  ingredient_id uuid not null references products,
+  quantity numeric not null check (quantity > 0),
+  unique (product_id, ingredient_id)
 );
 
 create table inventory (
@@ -59,7 +81,9 @@ create table stock_movements (
   branch_id uuid not null references branches,
   product_id uuid not null references products,
   -- TEXT + CHECK (no enum): agregar 'venta' a futuro es solo recrear el constraint
-  type text not null check (type in ('ingreso_manual', 'egreso_manual', 'merma', 'remito_fabrica')),
+  type text not null check (type in (
+    'ingreso_manual', 'egreso_manual', 'merma', 'remito_fabrica', 'produccion', 'consumo_produccion'
+  )),
   quantity numeric not null check (quantity > 0),
   manager_name text not null check (length(trim(manager_name)) > 0),
   reason text,
@@ -88,7 +112,7 @@ create table alerts (
   id uuid primary key default gen_random_uuid(),
   branch_id uuid not null references branches,
   product_id uuid not null references products,
-  type text not null check (type in ('stock_critico', 'desvio_remito')),
+  type text not null check (type in ('stock_critico', 'desvio_remito', 'insumo_negativo')),
   message text not null,
   resolved boolean not null default false,
   created_at timestamptz not null default now()
@@ -115,8 +139,8 @@ declare
   pname text;
 begin
   delta := case
-    when new.type in ('ingreso_manual', 'remito_fabrica') then new.quantity
-    else -new.quantity  -- egreso_manual, merma (y futura 'venta')
+    when new.type in ('ingreso_manual', 'remito_fabrica', 'produccion') then new.quantity
+    else -new.quantity  -- egreso_manual, merma, consumo_produccion (y futura 'venta')
   end;
 
   insert into inventory (branch_id, product_id, current_stock)

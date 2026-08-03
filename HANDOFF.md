@@ -2,26 +2,22 @@
 
 Contexto para retomar en una sesión nueva de Claude Code. Generado 2026-07-30.
 
-## ⚠️ Lo más importante: estado de las ramas
+## ⚠️ Estado de las ramas (actualizado)
 
-El rediseño visual completo **está a salvo y terminado en la rama `cambios-esteticos`**
-(último commit `aa3d655 "carpi funcionando"`). No se perdió nada.
+**Ya está resuelto — el rediseño y el trabajo de la pestaña admin están unificados.**
 
-Hoy la sesión anterior cambió de rama:
-`cambios-esteticos` → `main` → creó `cambios-en-pestaña-admin` (nueva, parte de `main`,
-que está en el commit `5a76447`, **anterior** al rediseño).
+`cambios-esteticos` se mergeó a `main` vía PR #2 (`6ae97e8`), y ese `main` ya se trajo a
+`cambios-en-pestaña-admin` (`67416df "Merge branch 'main' ... into cambios-en-pestaña-admin"`).
+O sea que la rama activa ahora **sí tiene** el rediseño completo (Carpi, tema oscuro/claro,
+tokens, etc.) — ya se verificó que `src/components/Carpi.tsx` y `src/index.css` con los
+tokens están presentes en el working tree actual. Se puede seguir trabajando en esta rama
+sin necesidad de checkout a `cambios-esteticos`.
 
-Por eso ahora mismo el working tree (rama `cambios-en-pestaña-admin`) tiene el diseño
-genérico viejo (ámbar, sin Carpi, sin toggle de tema, `src/components/Carpi.tsx` ni
-siquiera existe en esta rama). Esto es **esperado**, no un bug ni una reversión accidental.
-
-- Si la próxima sesión es para **seguir con el rediseño**: `git checkout cambios-esteticos`.
-- Si es para **trabajar en la pestaña admin** (a juzgar por el nombre de la rama): quedarse
-  acá, pero tener en cuenta que esta rama todavía no tiene el rediseño — en algún momento
-  va a hacer falta mergear/rebasear `cambios-esteticos` para unificar ambos trabajos.
+- `cambios-en-pestaña-admin` está 3 commits adelante de `origin/cambios-en-pestaña-admin`
+  (sin pushear todavía, a decisión del usuario).
 - Dato aparte: existe además `remotes/origin/fix/general` con commits sueltos (botones
-  editar/borrar producto, columna nueva en `products`) que no están mergeados en ninguna
-  rama local activa. Puede ser trabajo de otra sesión/dispositivo — revisar antes de asumir
+  editar/borrar producto, columna nueva en `products`) que no están mergeados en esta rama
+  ni en `main`. Puede ser trabajo de otra sesión/dispositivo — revisar antes de asumir
   que se perdió o que hay que rehacerlo.
 
 ## Qué es el proyecto
@@ -30,7 +26,7 @@ React 19 + Vite 6 + TypeScript + Tailwind v4 + Express + Postgres. Sistema de co
 stock multi-sucursal. Roles: `admin` (panel completo, `Dashboard.tsx`) y `encargado`
 (vista simple: `Mostrador.tsx` + `Remitos.tsx`, con tabs en `App.tsx`).
 
-## El rediseño (rama `cambios-esteticos`)
+## El rediseño (ya mergeado, presente en la rama actual)
 
 ### Decisiones de diseño (ya cerradas con el usuario, no volver a preguntar)
 - Estética "retro pixel" profesional-amigable: negro/carbón + naranja.
@@ -40,7 +36,7 @@ stock multi-sucursal. Roles: `admin` (panel completo, `Dashboard.tsx`) y `encarg
   sans-serif normal para tablas y datos densos.
 - Nombre de la app se mantiene: "Stockcito".
 
-### Archivos clave (en `cambios-esteticos`)
+### Archivos clave
 - `src/index.css` — tokens de diseño como custom properties CSS (`--base`, `--surface`,
   `--ink`, `--accent`, etc.), mapeados a utilidades Tailwind vía `@theme inline`. Clases
   `.card`, `.panel`, `.btn`/`.btn-primary`/`.btn-ghost`, `.input`. Flip claro/oscuro con
@@ -95,9 +91,8 @@ No se invocó ningún `/skill` formal en esta sesión (la única skill global di
 
 ## Pendiente / no resuelto
 - Bug de `GRID_COVERED` (filas 19-24) sin arreglar, solo evitado (ver arriba).
-- Unificar `cambios-esteticos` con lo que se haga en `cambios-en-pestaña-admin` (y
-  eventualmente `origin/fix/general`) en algún momento — nadie pidió esto todavía,
-  no asumir un merge sin que el usuario lo pida.
+- `origin/fix/general` (botones editar/borrar producto, columna nueva en `products`)
+  sigue sin mergear a esta rama ni a `main` — no asumir un merge sin que el usuario lo pida.
 
 ## Nota sobre `.gitignore` / datos de prueba
 Ya se le explicó al usuario que **no** hay que sacar nada del `.gitignore` para compartir
