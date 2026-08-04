@@ -48,7 +48,7 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
   const [products, setProducts] = useState<Product[]>([])
   const [processes, setProcesses] = useState<Process[]>([])
   const [inventory, setInventory] = useState<InvRow[]>([])
-  const [alerts, setAlerts] = useState<Alert[]>([])
+  const [alerts, setAlerts] = useState<Alert[] | null>(null) // null = todavía no se cargaron
   const [team, setTeam] = useState<Worker[]>([])
   const [movements, setMovements] = useState<Movement[] | null>(null) // null = todavía no se buscó
   const [searching, setSearching] = useState(false)
@@ -90,7 +90,7 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
       .catch(() => {})
     // alertas en vivo por SSE (EventSource no admite headers → token en query)
     const es = new EventSource('/api/events?token=' + getToken())
-    es.onmessage = (e) => setAlerts((a) => [JSON.parse(e.data) as Alert, ...a])
+    es.onmessage = (e) => setAlerts((a) => [JSON.parse(e.data) as Alert, ...(a ?? [])])
     return () => es.close()
   }, [load])
 
@@ -125,7 +125,7 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
 
   async function resolveAlert(id: string) {
     await api(`/alerts/${id}/resolve`, { method: 'PATCH' })
-    setAlerts((a) => a.filter((x) => x.id !== id))
+    setAlerts((a) => a && a.filter((x) => x.id !== id))
   }
 
   async function enablePush() {
@@ -195,7 +195,7 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
 
       <nav className="bg-surface border-b-2 border-line flex gap-1.5 px-4 py-2 overflow-x-auto">
         <button onClick={() => setTab('alertas')} className={tabClass(tab === 'alertas')}>
-          <AlertTriangle size={16} /> Alertas{alerts.length > 0 && ` (${alerts.length})`}
+          <AlertTriangle size={16} /> Alertas{alerts && alerts.length > 0 && ` (${alerts.length})`}
         </button>
         <button onClick={() => setTab('stock')} className={tabClass(tab === 'stock')}>
           <Boxes size={16} /> Stock
@@ -235,7 +235,7 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
         )}
         {tab === 'sucursales' && (
           <SucursalesTab
-            branches={branches} team={team} alerts={alerts} products={products} inventory={inventory}
+            branches={branches} team={team} alerts={alerts ?? []} products={products} inventory={inventory}
             onChanged={load} onViewMovements={goToMovements} onViewAlerts={goToAlerts} onViewAsEncargado={setViewAsBranch}
           />
         )}
@@ -259,7 +259,7 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
 }
 
 function AlertasTab({ alerts, branches, products, branchName, onResolve, onChanged, branchFilter, setBranchFilter }: {
-  alerts: Alert[]; branches: Branch[]; products: Product[]; branchName: (id: string) => string
+  alerts: Alert[] | null; branches: Branch[]; products: Product[]; branchName: (id: string) => string
   onResolve: (id: string) => void; onChanged: () => void
   branchFilter: string; setBranchFilter: (id: string) => void
 }) {
@@ -267,7 +267,8 @@ function AlertasTab({ alerts, branches, products, branchName, onResolve, onChang
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
 
-  const shownAlerts = branchFilter ? alerts.filter((a) => a.branch_id === branchFilter) : alerts
+  // alerts null = todavía no respondió el servidor: nunca mostrar "sin alertas" antes de saberlo de verdad
+  const shownAlerts = alerts === null ? null : branchFilter ? alerts.filter((a) => a.branch_id === branchFilter) : alerts
 
   async function submit(e: FormEvent) {
     e.preventDefault()
@@ -310,7 +311,7 @@ function AlertasTab({ alerts, branches, products, branchName, onResolve, onChang
       <section>
         <div className="flex items-center gap-2 mb-2">
           <h2 className={sectionTitle + ' mb-0'}>
-            Alertas ({shownAlerts.length}){branchFilter && ` · ${branchName(branchFilter)}`}
+            Alertas {shownAlerts !== null && `(${shownAlerts.length})`}{branchFilter && ` · ${branchName(branchFilter)}`}
           </h2>
           {branchFilter && (
             <button onClick={() => setBranchFilter('')} className="text-xs text-accent hover:underline cursor-pointer">
@@ -319,7 +320,10 @@ function AlertasTab({ alerts, branches, products, branchName, onResolve, onChang
           )}
         </div>
         <ul className="space-y-2">
-          {shownAlerts.map((a) => (
+          {shownAlerts === null && (
+            <li className="text-center text-soft py-8 list-none">Cargando alertas…</li>
+          )}
+          {shownAlerts?.map((a) => (
             <li key={a.id} className="panel p-3 flex items-center justify-between gap-2">
               <div className="flex items-start gap-2.5">
                 <span
@@ -343,7 +347,7 @@ function AlertasTab({ alerts, branches, products, branchName, onResolve, onChang
               </button>
             </li>
           ))}
-          {shownAlerts.length === 0 && (
+          {shownAlerts !== null && shownAlerts.length === 0 && (
             <li className="flex items-center gap-3 text-soft text-sm list-none">
               <Carpi size={56} title="Carpi tranquilo, sin alertas" />
               <p>Sin alertas pendientes. Carpi está tranquilo.</p>
@@ -395,11 +399,14 @@ function RecipeBuilder({ recipe, setRecipe, candidates }: {
       {candidates.length === 0 && <p className="text-xs text-soft">No hay productos de otros procesos todavía.</p>}
       {recipe.map((item, i) => {
         const ingredient = candidates.find((c) => c.id === item.ingredient_id)
+        // cada fila oculta los insumos que ya eligieron las demás — así no se puede repetir uno
+        const usedElsewhere = new Set(recipe.filter((_, j) => j !== i).map((r) => r.ingredient_id))
+        const options = candidates.filter((c) => !usedElsewhere.has(c.id))
         return (
           <div key={i} className="flex gap-1.5 items-center">
             <select required value={item.ingredient_id} onChange={(e) => updateRow(i, { ingredient_id: e.target.value })} aria-label="Insumo" className={`${input} flex-1 min-w-0`}>
               <option value="">Insumo…</option>
-              {candidates.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {options.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
             <input
               required type="number" min="0.001" step="any"
@@ -414,9 +421,11 @@ function RecipeBuilder({ recipe, setRecipe, candidates }: {
           </div>
         )
       })}
-      <button type="button" onClick={() => setRecipe([...recipe, { ingredient_id: '', quantity: 0 }])} className="text-xs text-accent hover:underline cursor-pointer">
-        + Agregar insumo
-      </button>
+      {recipe.length < candidates.length && (
+        <button type="button" onClick={() => setRecipe([...recipe, { ingredient_id: '', quantity: 0 }])} className="text-xs text-accent hover:underline cursor-pointer">
+          + Agregar insumo
+        </button>
+      )}
     </div>
   )
 }
@@ -426,20 +435,23 @@ function StockTab({ branches, products, processes, inventory, onEdit, onChanged 
   onEdit: (p: Product) => void; onChanged: () => void
 }) {
   const [branchFilter, setBranchFilter] = useState('')
+  const [processFilter, setProcessFilter] = useState('')
   const [search, setSearch] = useState('')
   const [form, setForm] = useState({ name: '', category: '', unit: '', min: '' })
   const [processId, setProcessId] = useState('')
   const [isRawMaterial, setIsRawMaterial] = useState(true)
   const [recipe, setRecipe] = useState<RecipeItem[]>([])
   const [msg, setMsg] = useState<{ text: string; kind: 'ok' | 'err' } | null>(null)
+  const [confirming, setConfirming] = useState<ConfirmState>(null)
 
   const shownBranches = branchFilter ? branches.filter((b) => b.id === branchFilter) : branches
   const q = search.trim().toLowerCase()
-  const shownProducts = q
-    ? products.filter((p) => p.name.toLowerCase().includes(q) || p.category?.toLowerCase().includes(q))
-    : products
+  const shownProducts = products
+    .filter((p) => !q || p.name.toLowerCase().includes(q) || p.category?.toLowerCase().includes(q))
+    .filter((p) => !processFilter || p.process_id === processFilter)
   const stockOf = (productId: string, branchId: string) =>
     inventory.find((i) => i.product_id === productId && i.branch_id === branchId)?.current_stock ?? 0
+  const processName = (id: string | null) => processes.find((pr) => pr.id === id)?.name
 
   async function addProduct(e: FormEvent) {
     e.preventDefault()
@@ -512,6 +524,12 @@ function StockTab({ branches, products, processes, inventory, onEdit, onChanged 
               <option value="">Todas las sucursales</option>
               {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
+            {processes.length > 0 && (
+              <select value={processFilter} onChange={(e) => setProcessFilter(e.target.value)} aria-label="Filtrar por proceso" className={input}>
+                <option value="">Todos los procesos</option>
+                {processes.map((pr) => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
+              </select>
+            )}
           </div>
         </div>
         <div className="panel overflow-x-auto">
@@ -542,8 +560,13 @@ function StockTab({ branches, products, processes, inventory, onEdit, onChanged 
                           <Pencil size={14} />
                         </button>
                         <button
-                          onClick={() => confirm(`¿Eliminar "${p.name}"? No se borra el historial, solo deja de aparecer en las listas.`) &&
-                            deleteProduct(p.id).then(onChanged)}
+                          onClick={() => setConfirming({
+                            message: `¿Eliminar "${p.name}"? No se borra el historial, solo deja de aparecer en las listas.`,
+                            onConfirm: () => {
+                              setConfirming(null)
+                              deleteProduct(p.id).then(onChanged).catch((e) => setMsg({ text: 'Error: ' + (e as Error).message, kind: 'err' }))
+                            },
+                          })}
                           title="Eliminar producto"
                           aria-label={`Eliminar ${p.name}`}
                           className="p-1.5 text-danger hover:bg-danger-soft rounded-md cursor-pointer"
@@ -552,7 +575,14 @@ function StockTab({ branches, products, processes, inventory, onEdit, onChanged 
                         </button>
                       </div>
                     </td>
-                    <td className="p-2 font-medium">{p.name}</td>
+                    <td className="p-2 font-medium">
+                      {p.name}
+                      {p.process_id && (
+                        <span className="ml-1.5 text-xs font-normal text-soft bg-sunken rounded px-1.5 py-0.5 whitespace-nowrap">
+                          {processName(p.process_id)} · {p.is_raw_material ? 'materia prima' : 'fabricado'}
+                        </span>
+                      )}
+                    </td>
                     {shownBranches.map((b) => {
                       const s = stockOf(p.id, b.id)
                       return (
@@ -576,6 +606,7 @@ function StockTab({ branches, products, processes, inventory, onEdit, onChanged 
           </table>
         </div>
       </section>
+      {confirming && <ConfirmModal message={confirming.message} onConfirm={confirming.onConfirm} onCancel={() => setConfirming(null)} />}
     </div>
   )
 }
@@ -585,6 +616,7 @@ function ProcesosTab({ processes, products, onChanged }: { processes: Process[];
   const [msg, setMsg] = useState<{ text: string; kind: 'ok' | 'err' } | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState('')
+  const [confirming, setConfirming] = useState<ConfirmState>(null)
 
   async function run(fn: () => Promise<unknown>, ok: string) {
     setMsg(null)
@@ -639,29 +671,58 @@ function ProcesosTab({ processes, products, onChanged }: { processes: Process[];
                     <button className="btn btn-primary px-3 py-1 text-sm">Guardar</button>
                   </form>
                 ) : (
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <p className="font-medium">{p.name}</p>
-                      <p className="text-xs text-soft">{count} producto{count === 1 ? '' : 's'}</p>
+                  <>
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <p className="font-medium">{p.name}</p>
+                        <p className="text-xs text-soft">{count} producto{count === 1 ? '' : 's'}</p>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          onClick={() => { setEditingId(p.id); setEditingName(p.name) }}
+                          title="Editar proceso" aria-label={`Editar ${p.name}`}
+                          className="p-1.5 text-soft hover:bg-sunken rounded-md cursor-pointer"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          onClick={() => setConfirming({
+                            message: `¿Eliminar el proceso "${p.name}"? Solo se puede si no tiene productos asignados.`,
+                            onConfirm: () => { setConfirming(null); run(() => deleteProcess(p.id), 'Proceso eliminado.') },
+                          })}
+                          title="Eliminar proceso" aria-label={`Eliminar ${p.name}`}
+                          className="p-1.5 text-danger hover:bg-danger-soft rounded-md cursor-pointer"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        onClick={() => { setEditingId(p.id); setEditingName(p.name) }}
-                        title="Editar proceso" aria-label={`Editar ${p.name}`}
-                        className="p-1.5 text-soft hover:bg-sunken rounded-md cursor-pointer"
-                      >
-                        <Pencil size={14} />
-                      </button>
-                      <button
-                        onClick={() => confirm(`¿Eliminar el proceso "${p.name}"? Solo se puede si no tiene productos asignados.`) &&
-                          run(() => deleteProcess(p.id), 'Proceso eliminado.')}
-                        title="Eliminar proceso" aria-label={`Eliminar ${p.name}`}
-                        className="p-1.5 text-danger hover:bg-danger-soft rounded-md cursor-pointer"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </div>
+                    {count > 0 && (
+                      <ul className="mt-2 pl-3 border-l-2 border-line/50 space-y-1.5">
+                        {products.filter((pr) => pr.process_id === p.id).map((pr) => (
+                          <li key={pr.id} className="text-sm">
+                            <span className="font-medium">{pr.name}</span>
+                            <span className="text-xs text-soft"> — {pr.is_raw_material ? 'materia prima' : 'fabricado'}</span>
+                            {!pr.is_raw_material && (
+                              pr.recipe.length === 0 ? (
+                                <p className="text-xs text-warn pl-2">Sin receta definida.</p>
+                              ) : (
+                                <p className="text-xs text-soft pl-2">
+                                  {pr.recipe
+                                    .map((r) => {
+                                      const ing = products.find((x) => x.id === r.ingredient_id)
+                                      return ing ? `${ing.name} (${fmt(r.quantity)} ${ing.unit})` : null
+                                    })
+                                    .filter(Boolean)
+                                    .join(', ')}
+                                </p>
+                              )
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </>
                 )}
               </li>
             )
@@ -669,6 +730,7 @@ function ProcesosTab({ processes, products, onChanged }: { processes: Process[];
           {processes.length === 0 && <p className="text-soft text-sm">Todavía no hay procesos — creá uno arriba.</p>}
         </ul>
       </section>
+      {confirming && <ConfirmModal message={confirming.message} onConfirm={confirming.onConfirm} onCancel={() => setConfirming(null)} />}
     </div>
   )
 }
@@ -842,6 +904,7 @@ function BranchCard({ branch, team, alerts, products, inventory, onChanged, onVi
   const [msg, setMsg] = useState<{ text: string; kind: 'ok' | 'err' } | null>(null)
   const [editingBranch, setEditingBranch] = useState(false)
   const [branchForm, setBranchForm] = useState({ name: branch.name, address: branch.address ?? '' })
+  const [confirming, setConfirming] = useState<ConfirmState>(null)
 
   async function run(fn: () => Promise<unknown>, ok: string) {
     setMsg(null)
@@ -904,8 +967,10 @@ function BranchCard({ branch, team, alerts, products, inventory, onChanged, onVi
               <Pencil size={14} />
             </button>
             <button
-              onClick={() => confirm(`¿Eliminar "${branch.name}"? Solo se puede si no tiene encargados, stock ni movimientos asociados.`) &&
-                run(() => deleteBranch(branch.id), 'Sucursal eliminada.')}
+              onClick={() => setConfirming({
+                message: `¿Eliminar "${branch.name}"? Solo se puede si no tiene encargados, stock ni movimientos asociados.`,
+                onConfirm: () => { setConfirming(null); run(() => deleteBranch(branch.id), 'Sucursal eliminada.') },
+              })}
               title="Eliminar sucursal"
               aria-label={`Eliminar ${branch.name}`}
               className="p-1.5 text-danger hover:bg-danger-soft rounded-md cursor-pointer"
@@ -957,7 +1022,10 @@ function BranchCard({ branch, team, alerts, products, inventory, onChanged, onVi
                 <button
                   title="Eliminar cuenta"
                   aria-label={`Eliminar cuenta de ${w.name}`}
-                  onClick={() => confirm(`¿Eliminar la cuenta de ${w.name}?`) && run(() => api(`/team/${w.id}`, { method: 'DELETE' }), 'Cuenta eliminada.')}
+                  onClick={() => setConfirming({
+                    message: `¿Eliminar la cuenta de ${w.name}?`,
+                    onConfirm: () => { setConfirming(null); run(() => api(`/team/${w.id}`, { method: 'DELETE' }), 'Cuenta eliminada.') },
+                  })}
                   className="p-1 text-danger hover:bg-danger-soft rounded-md cursor-pointer"
                 >
                   <Trash2 size={14} />
@@ -978,6 +1046,7 @@ function BranchCard({ branch, team, alerts, products, inventory, onChanged, onVi
       </button>
 
       {msg && <p className={`text-xs ${msg.kind === 'ok' ? 'text-ok' : 'text-danger'}`}>{msg.text}</p>}
+      {confirming && <ConfirmModal message={confirming.message} onConfirm={confirming.onConfirm} onCancel={() => setConfirming(null)} />}
     </div>
   )
 }
@@ -1017,6 +1086,37 @@ function ViewAsEncargado({ branch, onExit }: { branch: Branch; onExit: () => voi
       <main className="max-w-3xl mx-auto p-4">
         {tab === 'mostrador' ? <Mostrador branchId={branch.id} /> : <Remitos branchId={branch.id} />}
       </main>
+    </div>
+  )
+}
+
+// Reemplaza confirm() nativo en las acciones destructivas: mismo look que el
+// resto de los modales de la app (antes esos borrados rompían la identidad
+// visual saliendo al diálogo crudo del navegador).
+type ConfirmState = { message: string; onConfirm: () => void } | null
+
+function ConfirmModal({ message, onConfirm, onCancel }: { message: string; onConfirm: () => void; onCancel: () => void }) {
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => e.key === 'Escape' && onCancel()
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [onCancel])
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-10" onClick={onCancel}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Confirmar acción"
+        className="card p-6 w-full max-w-sm space-y-4"
+      >
+        <p className="text-sm">{message}</p>
+        <div className="flex gap-2 justify-end">
+          <button type="button" onClick={onCancel} className="btn btn-ghost px-4 py-1.5">Cancelar</button>
+          <button type="button" onClick={onConfirm} className="btn btn-primary px-4 py-1.5">Confirmar</button>
+        </div>
+      </div>
     </div>
   )
 }

@@ -269,6 +269,8 @@ async function saveRecipe(
   await client.query('delete from product_recipes where product_id = $1', [productId])
   if (isRawMaterial || recipe.length === 0) return
   const ingredientIds = [...new Set(recipe.map((r) => r.ingredient_id))]
+  if (ingredientIds.length !== recipe.length)
+    throw new Error('No se puede repetir el mismo insumo en una receta')
   const valid = await client.query(
     `select id from products where id = any($1::uuid[]) and owner_id = $2 and process_id is not null and process_id is distinct from $3`,
     [ingredientIds, ownerId, processId],
@@ -337,6 +339,17 @@ app.patch('/api/products/:id', authed(async (user, req, res) => {
 
 app.delete('/api/products/:id', authed(async (user, req, res) => {
   if (user.role !== 'admin') return void res.status(403).json({ error: 'Solo admin' })
+  // soft-delete: no hay FK que lo impida sola, hay que chequear a mano si
+  // sigue siendo insumo de alguna receta activa antes de ocultarlo
+  const dependents = await pool.query(
+    `select p.name from product_recipes r join products p on p.id = r.product_id
+     where r.ingredient_id = $1 and p.owner_id = $2 and p.active`,
+    [req.params.id, user.id],
+  )
+  if (dependents.rows.length > 0)
+    return void res.status(400).json({
+      error: `No se puede eliminar: es insumo de la receta de ${dependents.rows.map((d) => d.name).join(', ')}`,
+    })
   const r = await pool.query(
     'update products set active = false where id = $1 and owner_id = $2 returning id',
     [req.params.id, user.id],
