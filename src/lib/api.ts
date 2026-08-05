@@ -46,6 +46,7 @@ export type Product = {
   category: string | null
   unit: string
   min_stock_threshold: number
+  current_stock?: number
 }
 
 export type Branch = { id: string; name: string }
@@ -60,7 +61,39 @@ export type Alert = {
   created_at: string
 }
 
+export type Remito = {
+  id: string
+  branch_id: string
+  branch_name: string
+  pdf_name: string
+  status: 'correcto' | 'con_incongruencia'
+  manager_name: string
+  created_at: string
+}
+
+export type RemitoItem = {
+  id: string
+  remito_id: string
+  product_id: string
+  product_name: string
+  unit: string
+  expected_qty: number
+  actual_qty: number
+  discrepancy_qty: number
+}
+
 export type MovementType = 'ingreso_manual' | 'egreso_manual' | 'merma' | 'remito_fabrica'
+
+export type Movement = {
+  id: string
+  branch_id: string
+  product_id: string
+  type: MovementType
+  quantity: number
+  manager_name: string
+  reason: string | null
+  created_at: string
+}
 
 export const MOVEMENT_LABELS: Record<MovementType, string> = {
   ingreso_manual: 'Entrada',
@@ -75,4 +108,12 @@ export function updateProduct(id: string, data: Partial<Pick<Product, 'name' | '
 
 export function deleteProduct(id: string) {
   return api(`/products/${id}`, { method: 'DELETE' })
+}
+
+export function getRemitos() {
+  return api<Remito[]>('/remitos')
+}
+
+export function getMovements() {
+  return api<Movement[]>('/movements')
 }
