@@ -341,7 +341,7 @@ export default function Mostrador() {
         {/* Right: History panel - always visible on desktop, hidden on mobile */}
         <aside className="hidden lg:block w-72 lg:w-80 flex flex-col panel overflow-hidden shrink-0" aria-label="Historial de movimientos">
           <header className="p-2 border-b-2 border-line bg-sunken shrink-0">
-            <h3 className="font-pixel font-bold text-xs text-soft uppercase tracking-wide">Historial reciente</h3>
+            <h3 className="font-pixel font-bold text-xs text-soft uppercase tracking-wide">Historial de movimientos</h3>
           </header>
           <div className="flex-1 overflow-y-auto p-1.5">
             {recentMovements.length === 0 ? (
@@ -360,23 +360,58 @@ export default function Mostrador() {
                   </tr>
                 </thead>
                 <tbody>
-                  {recentMovements.map((m) => (
-                    <tr key={m.id} className="border-t border-line/50 hover:bg-sunken/50">
-                      <td className="p-1.5 whitespace-nowrap text-soft">{new Date(m.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</td>
-                      <td className="p-1.5 truncate max-w-[140px] font-medium">{m.product_name}</td>
-                      <td className="p-1.5">
-                        <span className={`px-1 py-0.5 rounded text-[9px] font-pixel ${
-                          m.type === 'ingreso_manual' ? 'bg-ok-soft text-ok' :
-                          m.type === 'egreso_manual' ? 'bg-accent-soft text-accent' :
-                          m.type === 'merma' ? 'bg-danger-soft text-danger' :
-                          'bg-warn-soft text-warn'
-                        }`}>
-                          {MOVEMENT_LABELS[m.type as MovementType] ?? m.type}
-                        </span>
-                      </td>
-                      <td className="p-1.5 text-right tabular-nums font-medium">{m.quantity}</td>
-                    </tr>
-                  ))}
+                  {recentMovements
+                      .slice()
+                      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                      .reduce((acc: { items: Array<{ type: 'date-separator'; date: string } | { type: 'movement'; data: RecentMovement }>; dateKey?: string }, movement, index) => {
+                        const movementDate = new Date(movement.created_at);
+                        const dateKey = movementDate.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+                        // Si es el primer elemento o si la fecha cambió desde el último movimiento
+                        if (index === 0 || dateKey !== acc.dateKey) {
+                          // Añadir separador de fecha
+                          acc.items.push(
+                            { type: 'date-separator', date: dateKey },
+                            { type: 'movement', data: movement as RecentMovement }
+                          );
+                          acc.dateKey = dateKey;
+                        } else {
+                          // Añadir solo el movimiento
+                          acc.items.push({ type: 'movement', data: movement as RecentMovement });
+                        }
+
+                        return acc;
+                      }, { items: [] as Array<{ type: 'date-separator'; date: string } | { type: 'movement'; data: RecentMovement }>, dateKey: undefined })
+                      .items.map((item, index: number) => {
+                        if (item.type === 'date-separator') {
+                          return (
+                            <tr key={`date-${index}`} className="border-t border-line/50">
+                              <td colSpan={4} className="p-1.5 text-center text-xs font-pixel bg-sunken/50">
+                                {item.date}
+                              </td>
+                            </tr>
+                          );
+                        } else {
+                          const m = item.data;
+                          return (
+                            <tr key={m.id} className="border-t border-line/50 hover:bg-sunken/50">
+                              <td className="p-1.5 whitespace-nowrap text-soft">{new Date(m.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</td>
+                              <td className="p-1.5 truncate max-w-[140px] font-medium">{m.product_name}</td>
+                              <td className="p-1.5">
+                                <span className={`px-1 py-0.5 rounded text-[9px] font-pixel ${
+                                  m.type === 'ingreso_manual' ? 'bg-ok-soft text-ok' :
+                                  m.type === 'egreso_manual' ? 'bg-accent-soft text-accent' :
+                                  m.type === 'merma' ? 'bg-danger-soft text-danger' :
+                                  'bg-warn-soft text-warn'
+                                }`}>
+                                  {MOVEMENT_LABELS[m.type as MovementType] ?? m.type}
+                                </span>
+                              </td>
+                              <td className="p-1.5 text-right tabular-nums font-medium">{m.quantity}</td>
+                            </tr>
+                          );
+                        }
+                      })}
                 </tbody>
               </table>
             )}
@@ -415,7 +450,7 @@ export default function Mostrador() {
       {/* Mobile history toggle - shows as bottom sheet on mobile */}
       <div className="lg:hidden fixed bottom-0 left-0 right-0 z-10 panel border-t-2 border-line bg-base animate-slide-up max-h-[50vh] overflow-hidden">
         <header className="p-2 border-b-2 border-line bg-sunken flex items-center justify-between shrink-0">
-          <h3 className="font-pixel font-bold text-xs text-soft uppercase tracking-wide">Historial reciente</h3>
+          <h3 className="font-pixel font-bold text-xs text-soft uppercase tracking-wide">Historial de movimientos</h3>
           <button onClick={() => {}} className="p-1 text-soft" aria-label="Cerrar">×</button>
         </header>
         <div className="overflow-y-auto p-2 max-h-[45vh]">
@@ -432,23 +467,58 @@ export default function Mostrador() {
                 </tr>
               </thead>
               <tbody>
-                {recentMovements.slice(0, 20).map((m) => (
-                  <tr key={m.id} className="border-t border-line/50 hover:bg-sunken/50">
-                    <td className="p-1.5 whitespace-nowrap text-soft">{new Date(m.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</td>
-                    <td className="p-1.5 truncate max-w-[120px] font-medium">{m.product_name}</td>
-                    <td className="p-1.5">
-                      <span className={`px-1 py-0.5 rounded text-[9px] font-pixel ${
-                        m.type === 'ingreso_manual' ? 'bg-ok-soft text-ok' :
-                        m.type === 'egreso_manual' ? 'bg-accent-soft text-accent' :
-                        m.type === 'merma' ? 'bg-danger-soft text-danger' :
-                        'bg-warn-soft text-warn'
-                      }`}>
-                        {MOVEMENT_LABELS[m.type as MovementType] ?? m.type}
-                      </span>
-                    </td>
-                    <td className="p-1.5 text-right tabular-nums font-medium">{m.quantity}</td>
-                  </tr>
-                ))}
+                {recentMovements
+                    .slice(0, 20)
+                    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                    .reduce((acc: { items: Array<{ type: 'date-separator'; date: string } | { type: 'movement'; data: RecentMovement }>; dateKey?: string }, movement, index) => {
+                      const movementDate = new Date(movement.created_at);
+                      const dateKey = movementDate.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+                      // Si es el primer elemento o si la fecha cambió desde el último movimiento
+                      if (index === 0 || dateKey !== acc.dateKey) {
+                        // Añadir separador de fecha
+                        acc.items.push(
+                          { type: 'date-separator', date: dateKey },
+                          { type: 'movement', data: movement as RecentMovement }
+                        );
+                        acc.dateKey = dateKey;
+                      } else {
+                        // Añadir solo el movimiento
+                        acc.items.push({ type: 'movement', data: movement as RecentMovement });
+                      }
+
+                      return acc;
+                    }, { items: [] as Array<{ type: 'date-separator'; date: string } | { type: 'movement'; data: RecentMovement }>, dateKey: undefined })
+                    .items.map((item, index: number) => {
+                      if (item.type === 'date-separator') {
+                        return (
+                          <tr key={`date-${index}`} className="border-t border-line/50">
+                            <td colSpan={4} className="p-1.5 text-center text-xs font-pixel bg-sunken/50">
+                              {item.date}
+                            </td>
+                          </tr>
+                        );
+                      } else {
+                        const m = item.data;
+                        return (
+                          <tr key={m.id} className="border-t border-line/50 hover:bg-sunken/50">
+                            <td className="p-1.5 whitespace-nowrap text-soft">{new Date(m.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</td>
+                            <td className="p-1.5 truncate max-w-[120px] font-medium">{m.product_name}</td>
+                            <td className="p-1.5">
+                              <span className={`px-1 py-0.5 rounded text-[9px] font-pixel ${
+                                m.type === 'ingreso_manual' ? 'bg-ok-soft text-ok' :
+                                m.type === 'egreso_manual' ? 'bg-accent-soft text-accent' :
+                                m.type === 'merma' ? 'bg-danger-soft text-danger' :
+                                'bg-warn-soft text-warn'
+                              }`}>
+                                {MOVEMENT_LABELS[m.type as MovementType] ?? m.type}
+                              </span>
+                            </td>
+                            <td className="p-1.5 text-right tabular-nums font-medium">{m.quantity}</td>
+                          </tr>
+                        );
+                      }
+                    })}
               </tbody>
             </table>
           )}
