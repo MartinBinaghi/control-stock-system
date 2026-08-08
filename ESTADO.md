@@ -50,11 +50,11 @@ Los permisos que antes hacía RLS ahora viven en `server/index.ts` (wrapper `aut
 ## Comandos
 
 ```bash
-npm install
-npm run dev:server                 # API (requiere .env + Postgres)
-npm run dev                        # frontend con proxy a la API
-npm run build                      # typecheck app + server, build a dist/
-npm start                          # producción: API + frontend juntos
+pnpm install
+pnpm dev:server                    # API (requiere .env + Postgres)
+pnpm dev                           # frontend con proxy a la API
+pnpm build                         # typecheck app + server, build a dist/
+pnpm start                         # producción: API + frontend juntos
 node server/create-user.ts <email> <pass>   # admin verificado sin email / reset de contraseña
 node server/seed.ts <email-admin>  # datos de prueba (sucursales, productos, encargados, movimientos)
 node tests/auth.test.ts            # test de hash/verificación de contraseñas
