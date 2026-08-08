@@ -7,12 +7,31 @@ import nodemailer from 'nodemailer'
 import pg from 'pg'
 import webpush from 'web-push'
 import { hashPassword, verifyPassword } from './auth.ts'
+import { rateLimit } from 'express-rate-limit'
 
 try {
   process.loadEnvFile()
 } catch {
   // sin .env: las variables ya vienen del entorno
 }
+
+const apiLimiter = rateLimit({
+	windowMs: 15 * 60 * 1000, // 15 minutes
+	limit: 300, // Limit each IP to 100 requests per `window` (here, per 15 minutes).
+	standardHeaders: 'draft-8', // draft-6: `RateLimit-*` headers; draft-7 & draft-8: combined `RateLimit` header
+	legacyHeaders: false, // Disable the `X-RateLimit-*` headers.
+	ipv6Subnet: 56, // Set to 60 or 64 to be less aggressive, or 52 or 48 to be more aggressive
+  message: 'demasiadas peticiones, intente mas tarde'
+})
+
+const authLimiter = rateLimit ({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  ipv6Subnet: 56,
+  message: 'demasiadas peticiones, intente mas tarde'
+})
 
 const { DATABASE_URL, JWT_SECRET, PORT = '3001' } = process.env
 if (!DATABASE_URL || !JWT_SECRET) {
@@ -93,8 +112,10 @@ function authed(fn: (user: User, req: Request, res: Response) => Promise<unknown
 }
 
 // ---------- Auth ----------
+app.use('api/', apiLimiter)
+app.set('trust proxy',1)
 
-app.post('/api/login', async (req, res) => {
+app.post('/api/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body ?? {}
     const u = (await pool.query('select * from users where email = $1', [String(email ?? '').toLowerCase()])).rows[0]
@@ -113,7 +134,7 @@ app.post('/api/login', async (req, res) => {
 
 // Registro autoservicio: crea un admin sin verificar y manda el link por mail.
 // Si el email ya existe sin verificar, re-registra (reenvía el link).
-app.post('/api/signup', async (req, res) => {
+app.post('/api/signup', authLimiter, async (req, res) => {
   try {
     const { name, email, password } = req.body ?? {}
     if (!/^\S+@\S+\.\S+$/.test(String(email ?? '')))
@@ -139,7 +160,7 @@ app.post('/api/signup', async (req, res) => {
   }
 })
 
-app.post('/api/verify', async (req, res) => {
+app.post('/api/verify', authLimiter, async (req, res) => {
   const { rows } = await pool.query(
     `update users set verified = true, token = null where token = $1 and role = 'admin' returning id`,
     [String(req.body?.token ?? '')],
@@ -149,7 +170,7 @@ app.post('/api/verify', async (req, res) => {
 })
 
 // El trabajador invitado elige su contraseña desde el link del mail.
-app.post('/api/accept-invite', async (req, res) => {
+app.post('/api/accept-invite', authLimiter, async (req, res) => {
   const { token, password } = req.body ?? {}
   if (String(password ?? '').length < 6)
     return void res.status(400).json({ error: 'Contraseña muy corta (mínimo 6)' })
