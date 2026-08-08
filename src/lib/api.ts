@@ -53,6 +53,7 @@ export type Product = {
   process_id: string | null
   is_raw_material: boolean
   recipe: RecipeItem[]
+  current_stock?: number
 }
 
 export type Branch = { id: string; name: string; address: string | null }
@@ -67,7 +68,39 @@ export type Alert = {
   created_at: string
 }
 
+export type Remito = {
+  id: string
+  branch_id: string
+  branch_name: string
+  pdf_name: string
+  status: 'correcto' | 'con_incongruencia'
+  manager_name: string
+  created_at: string
+}
+
+export type RemitoItem = {
+  id: string
+  remito_id: string
+  product_id: string
+  product_name: string
+  unit: string
+  expected_qty: number
+  actual_qty: number
+  discrepancy_qty: number
+}
+
 export type MovementType = 'ingreso_manual' | 'egreso_manual' | 'merma' | 'remito_fabrica' | 'produccion' | 'consumo_produccion'
+
+export type Movement = {
+  id: string
+  branch_id: string
+  product_id: string
+  type: MovementType
+  quantity: number
+  manager_name: string
+  reason: string | null
+  created_at: string
+}
 
 export const MOVEMENT_LABELS: Record<MovementType, string> = {
   ingreso_manual: 'Entrada',
@@ -119,4 +152,12 @@ export function deleteBranch(id: string) {
 
 export function resendInvite(id: string) {
   return api(`/team/${id}/resend`, { method: 'POST' })
+}
+
+export function getRemitos() {
+  return api<Remito[]>('/remitos')
+}
+
+export function getMovements(branchId?: string) {
+  return api<Movement[]>('/movements' + (branchId ? `?branch=${branchId}` : ''))
 }
