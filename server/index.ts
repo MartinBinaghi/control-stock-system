@@ -8,12 +8,16 @@ import pg from 'pg'
 import webpush from 'web-push'
 import { hashPassword, verifyPassword } from './auth.ts'
 import { rateLimit } from 'express-rate-limit'
+import helmet from 'helmet'
+
 
 try {
   process.loadEnvFile()
 } catch {
   // sin .env: las variables ya vienen del entorno
 }
+
+
 
 const apiLimiter = rateLimit({
 	windowMs: 15 * 60 * 1000, // 15 minutes
@@ -83,9 +87,39 @@ type User = {
 // aislados filtrando todo por él (directo o vía sus sucursales).
 const tenantOf = (u: User) => (u.role === 'admin' ? u.id : u.owner_id!)
 const tenantBranches = (n = 1) => `select id from branches where owner_id = $${n}`
-
 const app = express()
 app.use(express.json())
+
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+      fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+      imgSrc: ["'self'", 'data:', 'blob:'],
+      connectSrc: ["'self'", 'https://api.pwnedpasswords.com'],
+      frameAncestors: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+      workerSrc: ["'self'", 'blob:']
+    }
+  },
+  hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  noSniff: true,
+  frameguard: { action: 'deny' }
+}))
+
+// Dev: CSP relajada para HMR
+if (process.env.NODE_ENV !== 'production') {
+  app.use((req, res, next) => {
+    res.setHeader('Content-Security-Policy',
+      "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:")
+    next()
+  })
+}
+
 
 // Autenticación + manejo de errores en un solo wrapper. El token va en
 // Authorization: Bearer (o ?token= para EventSource, que no admite headers).
