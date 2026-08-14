@@ -60,8 +60,8 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
   const [viewAsBranch, setViewAsBranch] = useState<Branch | null>(null)
 
   const load = useCallback(async () => {
-    try {
-      const [b, p, inv, al, tm, pr] = await Promise.all([
+    const fetchAll = () =>
+      Promise.all([
         api<Branch[]>('/branches'),
         api<Product[]>('/products'),
         api<InvRow[]>('/inventory'),
@@ -69,6 +69,13 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
         api<Worker[]>('/team'),
         api<Process[]>('/processes'),
       ])
+    try {
+      const [b, p, inv, al, tm, pr] = await fetchAll().catch(async (firstErr) => {
+        await new Promise((r) => setTimeout(r, 1000))
+        return fetchAll().catch(() => {
+          throw firstErr
+        })
+      })
       setBranches(b)
       setProducts(p)
       setInventory(inv)

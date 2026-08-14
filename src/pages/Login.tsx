@@ -48,9 +48,16 @@ export default function Login({ onLogin }: { onLogin: (p: Profile) => void }) {
         setNotice('Contraseña creada. Iniciá sesión con tu email.')
         setMode('login')
       } else {
-        const { token, profile } = await api<{ token: string; profile: Profile }>('/login', {
-          method: 'POST',
-          body: JSON.stringify({ email, password }),
+        const loginReq = () =>
+          api<{ token: string; profile: Profile }>('/login', {
+            method: 'POST',
+            body: JSON.stringify({ email, password }),
+          })
+        const { token, profile } = await loginReq().catch(async (firstErr) => {
+          await new Promise((r) => setTimeout(r, 1000))
+          return loginReq().catch(() => {
+            throw firstErr
+          })
         })
         setToken(token)
         onLogin(profile)
