@@ -201,3 +201,7 @@ create trigger trg_notify_alert
 --      por email a cada sucursal.
 -- Para crear un admin ya verificado sin email (o resetear una contraseña):
 --   node server/create-user.ts <email> <password>
+
+alter table users add column failed_login_attempts int not null default 0;
+alter table users add column locked_until timestamptz;
+create index on users (locked_until) where locked_until is not null;

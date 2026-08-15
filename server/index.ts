@@ -7,12 +7,35 @@ import nodemailer from 'nodemailer'
 import pg from 'pg'
 import webpush from 'web-push'
 import { hashPassword, verifyPassword } from './auth.ts'
+import { rateLimit } from 'express-rate-limit'
+import helmet from 'helmet'
+
 
 try {
   process.loadEnvFile()
 } catch {
   // sin .env: las variables ya vienen del entorno
 }
+
+
+
+const apiLimiter = rateLimit({
+	windowMs: 15 * 60 * 1000, // 15 minutes
+	limit: 300, // Limit each IP to 100 requests per `window` (here, per 15 minutes).
+	standardHeaders: 'draft-8', // draft-6: `RateLimit-*` headers; draft-7 & draft-8: combined `RateLimit` header
+	legacyHeaders: false, // Disable the `X-RateLimit-*` headers.
+	ipv6Subnet: 56, // Set to 60 or 64 to be less aggressive, or 52 or 48 to be more aggressive
+  message: 'demasiadas peticiones, intente mas tarde'
+})
+
+const authLimiter = rateLimit ({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  ipv6Subnet: 56,
+  message: 'demasiadas peticiones, intente mas tarde'
+})
 
 const { DATABASE_URL, JWT_SECRET, PORT = '3001' } = process.env
 if (!DATABASE_URL || !JWT_SECRET) {
@@ -64,9 +87,39 @@ type User = {
 // aislados filtrando todo por él (directo o vía sus sucursales).
 const tenantOf = (u: User) => (u.role === 'admin' ? u.id : u.owner_id!)
 const tenantBranches = (n = 1) => `select id from branches where owner_id = $${n}`
-
 const app = express()
 app.use(express.json())
+
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+      fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+      imgSrc: ["'self'", 'data:', 'blob:'],
+      connectSrc: ["'self'", 'https://api.pwnedpasswords.com'],
+      frameAncestors: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+      workerSrc: ["'self'", 'blob:']
+    }
+  },
+  hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  noSniff: true,
+  frameguard: { action: 'deny' }
+}))
+
+// Dev: CSP relajada para HMR
+if (process.env.NODE_ENV !== 'production') {
+  app.use((req, res, next) => {
+    res.setHeader('Content-Security-Policy',
+      "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:")
+    next()
+  })
+}
+
 
 // Autenticación + manejo de errores en un solo wrapper. El token va en
 // Authorization: Bearer (o ?token= para EventSource, que no admite headers).
@@ -93,11 +146,43 @@ function authed(fn: (user: User, req: Request, res: Response) => Promise<unknown
 }
 
 // ---------- Auth ----------
+app.use('api/', apiLimiter)
+app.set('trust proxy',1)
 
-app.post('/api/login', async (req, res) => {
+app.post('/api/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body ?? {}
     const u = (await pool.query('select * from users where email = $1', [String(email ?? '').toLowerCase()])).rows[0]
+    // Verificar bloqueo ANTES de verificar password
+    if (u.locked_until && u.locked_until > new Date()) {
+      const mins = Math.ceil((u.locked_until.getTime() - Date.now()) / 60000)
+      return res.status(429).json({ error: `Cuenta bloqueada. Intente en ${mins} minutos.` })
+    }
+
+    if (!verifyPassword(password, u.password_hash)) {
+      await pool.query(`
+        UPDATE users 
+        SET failed_login_attempts = CASE 
+              WHEN locked_until IS NOT NULL AND locked_until < NOW() 
+              THEN 1 
+              ELSE failed_login_attempts + 1 
+            END,
+            locked_until = CASE 
+              WHEN locked_until IS NOT NULL AND locked_until < NOW() 
+              THEN NULL
+              WHEN failed_login_attempts + 1 >= 5 
+              THEN NOW() + INTERVAL '15 minutes' 
+              ELSE locked_until 
+            END
+        WHERE id = $1
+      `, [u.id])
+
+      return res.status(401).json({ error: 'Email o contraseña incorrectos' })
+    }
+
+    // Login exitoso: resetear
+    await pool.query('update users set failed_login_attempts = 0, locked_until = null where id = $1', [u.id])
+
     if (!u?.password_hash || !verifyPassword(String(password ?? ''), u.password_hash))
       return void res.status(401).json({ error: 'Email o contraseña incorrectos' })
     if (!u.verified)
@@ -113,7 +198,7 @@ app.post('/api/login', async (req, res) => {
 
 // Registro autoservicio: crea un admin sin verificar y manda el link por mail.
 // Si el email ya existe sin verificar, re-registra (reenvía el link).
-app.post('/api/signup', async (req, res) => {
+app.post('/api/signup', authLimiter, async (req, res) => {
   try {
     const { name, email, password } = req.body ?? {}
     if (!/^\S+@\S+\.\S+$/.test(String(email ?? '')))
@@ -139,7 +224,7 @@ app.post('/api/signup', async (req, res) => {
   }
 })
 
-app.post('/api/verify', async (req, res) => {
+app.post('/api/verify', authLimiter, async (req, res) => {
   const { rows } = await pool.query(
     `update users set verified = true, token = null where token = $1 and role = 'admin' returning id`,
     [String(req.body?.token ?? '')],
@@ -149,7 +234,7 @@ app.post('/api/verify', async (req, res) => {
 })
 
 // El trabajador invitado elige su contraseña desde el link del mail.
-app.post('/api/accept-invite', async (req, res) => {
+app.post('/api/accept-invite', authLimiter, async (req, res) => {
   const { token, password } = req.body ?? {}
   if (String(password ?? '').length < 6)
     return void res.status(400).json({ error: 'Contraseña muy corta (mínimo 6)' })
@@ -680,10 +765,21 @@ app.get('/api/events', authed(async (user, _req, res) => {
   res.write('\n')
   sseClients.set(res, user.id)
   res.on('close', () => sseClients.delete(res))
+  res.on('error', (e) => {
+    console.error('SSE client error:', e)
+    sseClients.delete(res)
+  })
 }))
 
 setInterval(() => {
-  for (const c of sseClients.keys()) c.write(': ping\n\n')
+  for (const [c] of sseClients) {
+    try {
+      c.write(': ping\n\n')
+    } catch (e) {
+      console.error('SSE ping error:', e)
+      sseClients.delete(c)
+    }
+  }
 }, 30_000)
 
 async function sendPush(alert: { type: string; message: string }, owner: string) {
@@ -706,8 +802,15 @@ async function sendPush(alert: { type: string; message: string }, owner: string)
   )
 }
 
+let listenClient: pg.Client | null = null
+
 async function listenAlerts() {
+  if (listenClient) {
+    try { await listenClient.end() } catch { /* ya estaba cerrado */ }
+    listenClient = null
+  }
   const listener = new pg.Client({ connectionString: DATABASE_URL })
+  listenClient = listener
   await listener.connect()
   await listener.query('listen alerts')
   listener.on('notification', async (msg) => {
@@ -718,13 +821,22 @@ async function listenAlerts() {
         await pool.query('select owner_id from branches where id = $1', [alert.branch_id])
       ).rows[0]?.owner_id
       if (!owner) return
-      for (const [c, tenant] of sseClients) if (tenant === owner) c.write(`data: ${msg.payload}\n\n`)
+      for (const [c, tenant] of sseClients) {
+        if (tenant !== owner) continue
+        try {
+          c.write(`data: ${msg.payload}\n\n`)
+        } catch (e) {
+          console.error('SSE notify error:', e)
+          sseClients.delete(c)
+        }
+      }
       if (pushEnabled) await sendPush(alert, owner)
     } catch (e) {
       console.error(e)
     }
   })
-  listener.on('error', () => {
+  listener.on('error', (e) => {
+    console.error('LISTEN client error:', e)
     listener.end().catch(() => {})
     setTimeout(() => listenAlerts().catch(console.error), 5000) // reconexión simple
   })
