@@ -160,7 +160,7 @@ app.post('/api/login', authLimiter, async (req, res) => {
     }
 
     if (!verifyPassword(password, u.password_hash)) {
-      const { rows } = await pool.query(`
+      await pool.query(`
         UPDATE users 
         SET failed_login_attempts = CASE 
               WHEN locked_until IS NOT NULL AND locked_until < NOW() 
@@ -268,37 +268,174 @@ app.post('/api/branches', authed(async (user, req, res) => {
   res.json(r.rows[0])
 }))
 
-app.get('/api/products', authed(async (user, _req, res) => {
-  res.json((await pool.query('select * from products where owner_id = $1 and active order by name', [tenantOf(user)])).rows)
+app.patch('/api/branches/:id', authed(async (user, req, res) => {
+  if (user.role !== 'admin') return void res.status(403).json({ error: 'Solo admin' })
+  const { name, address } = req.body ?? {}
+  if (!String(name ?? '').trim()) return void res.status(400).json({ error: 'Falta el nombre' })
+  const r = await pool.query(
+    'update branches set name = $1, address = $2 where id = $3 and owner_id = $4 returning *',
+    [String(name).trim(), address || null, req.params.id, user.id],
+  )
+  if (!r.rows[0]) return void res.status(404).json({ error: 'Sucursal no encontrada' })
+  res.json(r.rows[0])
 }))
+
+app.delete('/api/branches/:id', authed(async (user, req, res) => {
+  if (user.role !== 'admin') return void res.status(403).json({ error: 'Solo admin' })
+  try {
+    const r = await pool.query('delete from branches where id = $1 and owner_id = $2 returning id', [req.params.id, user.id])
+    if (!r.rows[0]) return void res.status(404).json({ error: 'Sucursal no encontrada' })
+    res.json({ ok: true })
+  } catch (e) {
+    if ((e as { code?: string }).code === '23503')
+      return void res.status(400).json({ error: 'No se puede eliminar: la sucursal tiene encargados, stock o movimientos asociados' })
+    throw e
+  }
+}))
+
+// ---------- Procesos (etapas de fabricación) ----------
+
+app.get('/api/processes', authed(async (user, _req, res) => {
+  res.json((await pool.query('select * from processes where owner_id = $1 order by name', [tenantOf(user)])).rows)
+}))
+
+app.post('/api/processes', authed(async (user, req, res) => {
+  if (user.role !== 'admin') return void res.status(403).json({ error: 'Solo admin' })
+  const { name } = req.body ?? {}
+  if (!String(name ?? '').trim()) return void res.status(400).json({ error: 'Falta el nombre' })
+  const r = await pool.query('insert into processes (owner_id, name) values ($1, $2) returning *', [user.id, String(name).trim()])
+  res.json(r.rows[0])
+}))
+
+app.patch('/api/processes/:id', authed(async (user, req, res) => {
+  if (user.role !== 'admin') return void res.status(403).json({ error: 'Solo admin' })
+  const { name } = req.body ?? {}
+  if (!String(name ?? '').trim()) return void res.status(400).json({ error: 'Falta el nombre' })
+  const r = await pool.query(
+    'update processes set name = $1 where id = $2 and owner_id = $3 returning *',
+    [String(name).trim(), req.params.id, user.id],
+  )
+  if (!r.rows[0]) return void res.status(404).json({ error: 'Proceso no encontrado' })
+  res.json(r.rows[0])
+}))
+
+app.delete('/api/processes/:id', authed(async (user, req, res) => {
+  if (user.role !== 'admin') return void res.status(403).json({ error: 'Solo admin' })
+  try {
+    const r = await pool.query('delete from processes where id = $1 and owner_id = $2 returning id', [req.params.id, user.id])
+    if (!r.rows[0]) return void res.status(404).json({ error: 'Proceso no encontrado' })
+    res.json({ ok: true })
+  } catch (e) {
+    if ((e as { code?: string }).code === '23503')
+      return void res.status(400).json({ error: 'No se puede eliminar: hay productos asignados a este proceso' })
+    throw e
+  }
+}))
+
+app.get('/api/products', authed(async (user, _req, res) => {
+  res.json((await pool.query(
+    `select p.*, coalesce(
+       (select json_agg(json_build_object('ingredient_id', r.ingredient_id, 'quantity', r.quantity))
+        from product_recipes r where r.product_id = p.id),
+       '[]'
+     ) as recipe
+     from products p where p.owner_id = $1 and p.active order by p.name`,
+    [tenantOf(user)],
+  )).rows)
+}))
+
+// Receta de un producto fabricado: reemplaza todos sus insumos. Los insumos
+// deben pertenecer a un proceso distinto al del propio producto (ver
+// comentario en schema.sql). Nada de esto aplica si es materia prima: se
+// borra cualquier receta vieja y listo, no puede quedar guardada a mitad.
+async function saveRecipe(
+  client: pg.PoolClient, productId: string, processId: string | null, isRawMaterial: boolean,
+  recipe: { ingredient_id: string; quantity: number }[], ownerId: string,
+) {
+  await client.query('delete from product_recipes where product_id = $1', [productId])
+  if (isRawMaterial || recipe.length === 0) return
+  const ingredientIds = [...new Set(recipe.map((r) => r.ingredient_id))]
+  if (ingredientIds.length !== recipe.length)
+    throw new Error('No se puede repetir el mismo insumo en una receta')
+  const valid = await client.query(
+    `select id from products where id = any($1::uuid[]) and owner_id = $2 and process_id is not null and process_id is distinct from $3`,
+    [ingredientIds, ownerId, processId],
+  )
+  if (valid.rows.length !== ingredientIds.length)
+    throw new Error('Los insumos deben pertenecer a un proceso distinto al del producto')
+  for (const item of recipe) {
+    await client.query(
+      'insert into product_recipes (product_id, ingredient_id, quantity) values ($1, $2, $3)',
+      [productId, item.ingredient_id, item.quantity],
+    )
+  }
+}
 
 app.post('/api/products', authed(async (user, req, res) => {
   if (user.role !== 'admin') return void res.status(403).json({ error: 'Solo admin' })
-  const { name, category, unit, min_stock_threshold } = req.body ?? {}
+  const { name, category, unit, min_stock_threshold, process_id, is_raw_material, recipe } = req.body ?? {}
   if (!String(name ?? '').trim()) return void res.status(400).json({ error: 'Falta el nombre' })
-  const r = await pool.query(
-    `insert into products (owner_id, name, category, unit, min_stock_threshold)
-     values ($1, $2, $3, coalesce(nullif($4, ''), 'unidad'), coalesce($5, 0)) returning *`,
-    [user.id, String(name).trim(), category || null, unit, min_stock_threshold],
-  )
-  res.json(r.rows[0])
+  const isRaw = is_raw_material !== false
+  if (!isRaw && !process_id) return void res.status(400).json({ error: 'Un producto fabricado debe pertenecer a un proceso' })
+  const client = await pool.connect()
+  try {
+    await client.query('begin')
+    const product = (await client.query(
+      `insert into products (owner_id, name, category, unit, min_stock_threshold, process_id, is_raw_material)
+       values ($1, $2, $3, coalesce(nullif($4, ''), 'unidad'), coalesce($5, 0), $6, $7) returning *`,
+      [user.id, String(name).trim(), category || null, unit, min_stock_threshold, process_id || null, isRaw],
+    )).rows[0]
+    await saveRecipe(client, product.id, process_id || null, isRaw, Array.isArray(recipe) ? recipe : [], user.id)
+    await client.query('commit')
+    res.json(product)
+  } catch (e) {
+    await client.query('rollback')
+    throw e
+  } finally {
+    client.release()
+  }
 }))
 
 app.patch('/api/products/:id', authed(async (user, req, res) => {
   if (user.role !== 'admin') return void res.status(403).json({ error: 'Solo admin' })
-  const { name, category, unit, min_stock_threshold } = req.body ?? {}
+  const { name, category, unit, min_stock_threshold, process_id, is_raw_material, recipe } = req.body ?? {}
   if (!String(name ?? '').trim()) return void res.status(400).json({ error: 'Falta el nombre' })
-  const r = await pool.query(
-    `update products set name = $1, category = $2, unit = coalesce(nullif($3, ''), 'unidad'), min_stock_threshold = coalesce($4, 0)
-     where id = $5 and owner_id = $6 returning *`,
-    [String(name).trim(), category || null, unit, min_stock_threshold, req.params.id, user.id],
-  )
-  if (!r.rows[0]) return void res.status(404).json({ error: 'Producto no encontrado' })
-  res.json(r.rows[0])
+  const isRaw = is_raw_material !== false
+  if (!isRaw && !process_id) return void res.status(400).json({ error: 'Un producto fabricado debe pertenecer a un proceso' })
+  const client = await pool.connect()
+  try {
+    await client.query('begin')
+    const product = (await client.query(
+      `update products set name = $1, category = $2, unit = coalesce(nullif($3, ''), 'unidad'), min_stock_threshold = coalesce($4, 0),
+         process_id = $5, is_raw_material = $6
+       where id = $7 and owner_id = $8 returning *`,
+      [String(name).trim(), category || null, unit, min_stock_threshold, process_id || null, isRaw, req.params.id, user.id],
+    )).rows[0]
+    if (!product) { await client.query('rollback'); return void res.status(404).json({ error: 'Producto no encontrado' }) }
+    await saveRecipe(client, product.id, process_id || null, isRaw, Array.isArray(recipe) ? recipe : [], user.id)
+    await client.query('commit')
+    res.json(product)
+  } catch (e) {
+    await client.query('rollback')
+    throw e
+  } finally {
+    client.release()
+  }
 }))
 
 app.delete('/api/products/:id', authed(async (user, req, res) => {
   if (user.role !== 'admin') return void res.status(403).json({ error: 'Solo admin' })
+  // soft-delete: no hay FK que lo impida sola, hay que chequear a mano si
+  // sigue siendo insumo de alguna receta activa antes de ocultarlo
+  const dependents = await pool.query(
+    `select p.name from product_recipes r join products p on p.id = r.product_id
+     where r.ingredient_id = $1 and p.owner_id = $2 and p.active`,
+    [req.params.id, user.id],
+  )
+  if (dependents.rows.length > 0)
+    return void res.status(400).json({
+      error: `No se puede eliminar: es insumo de la receta de ${dependents.rows.map((d) => d.name).join(', ')}`,
+    })
   const r = await pool.query(
     'update products set active = false where id = $1 and owner_id = $2 returning id',
     [req.params.id, user.id],
@@ -343,11 +480,31 @@ app.delete('/api/team/:id', authed(async (user, req, res) => {
   res.json({ ok: true })
 }))
 
-app.get('/api/inventory', authed(async (user, _req, res) => {
+// Reenvía la invitación (o resetea la contraseña de uno ya verificado: el
+// link de invite le permite elegir una contraseña nueva igual).
+app.post('/api/team/:id/resend', authed(async (user, req, res) => {
+  if (user.role !== 'admin') return void res.status(403).json({ error: 'Solo admin' })
+  const token = randomBytes(32).toString('hex')
+  const r = await pool.query(
+    `update users set token = $1 from branches
+     where users.id = $2 and users.owner_id = $3 and branches.id = users.branch_id
+     returning users.email, users.name, branches.name as branch_name`,
+    [token, req.params.id, user.id],
+  )
+  if (!r.rows[0]) return void res.status(404).json({ error: 'Encargado no encontrado' })
+  const { email, name, branch_name } = r.rows[0]
+  await sendMail(email, `Invitación a ${branch_name} — Control de Stock`,
+    `Hola ${name}:\n\n${user.name} te reenvió la invitación a ${branch_name}. Para elegir tu contraseña entrá a:\n${APP_URL}/?invite=${token}`)
+  res.json({ ok: true })
+}))
+
+app.get('/api/inventory', authed(async (user, req, res) => {
   const q = 'select branch_id, product_id, current_stock from inventory'
-  const r = user.role === 'admin'
-    ? await pool.query(`${q} where branch_id in (${tenantBranches()})`, [user.id])
-    : await pool.query(q + ' where branch_id = $1', [user.branch_id])
+  if (user.role !== 'admin') return void res.json((await pool.query(q + ' where branch_id = $1', [user.branch_id])).rows)
+  const { branch } = req.query
+  const r = branch
+    ? await pool.query(`${q} where branch_id = $1 and branch_id in (${tenantBranches(2)})`, [branch, user.id])
+    : await pool.query(`${q} where branch_id in (${tenantBranches()})`, [user.id])
   res.json(r.rows)
 }))
 
@@ -357,6 +514,21 @@ app.get('/api/alerts', authed(async (user, _req, res) => {
     ? await pool.query(`${q} and branch_id in (${tenantBranches()}) order by created_at desc`, [user.id])
     : await pool.query(q + ' and branch_id = $1 order by created_at desc', [user.branch_id])
   res.json(r.rows)
+}))
+
+app.post('/api/alerts', authed(async (user, req, res) => {
+  if (user.role !== 'admin') return void res.status(403).json({ error: 'Solo admin' })
+  const { branch_id, product_id, type, message } = req.body ?? {}
+  if (!['stock_critico', 'desvio_remito'].includes(type) || !String(message ?? '').trim())
+    return void res.status(400).json({ error: 'Faltan datos' })
+  const r = await pool.query(
+    `insert into alerts (branch_id, product_id, type, message)
+     select $1::uuid, $2::uuid, $3::text, $4::text
+     where $1 in (${tenantBranches(5)}) returning *`,
+    [branch_id, product_id, type, String(message).trim(), user.id],
+  )
+  if (!r.rows[0]) return void res.status(400).json({ error: 'Sucursal inválida' })
+  res.json(r.rows[0])
 }))
 
 app.patch('/api/alerts/:id/resolve', authed(async (user, req, res) => {
@@ -381,6 +553,77 @@ app.post('/api/movements', authed(async (user, req, res) => {
   )
   if (!r.rows[0]) return void res.status(400).json({ error: 'Sucursal inválida' })
   res.json(r.rows[0])
+}))
+
+// Producir un lote de un producto fabricado: descuenta los insumos de su
+// receta y da de alta el producto terminado, en una sola transacción. Si
+// falta stock de algún insumo no se permite sin confirmación explícita
+// (force) — y si se confirma igual, queda en negativo más una alerta
+// 'insumo_negativo' para que se revise después (la alerta de stock_critico
+// genérica también puede saltar sola, vía el trigger de siempre).
+app.post('/api/production', authed(async (user, req, res) => {
+  const { product_id, quantity, branch_id, force } = req.body ?? {}
+  const branch = user.role === 'admin' ? branch_id : user.branch_id
+  const qty = Number(quantity)
+  if (!qty || qty <= 0) return void res.status(400).json({ error: 'Cantidad inválida' })
+  const r2 = (n: number) => +n.toFixed(2)
+
+  const owns = (await pool.query('select 1 from branches where id = $1 and owner_id = $2', [branch, tenantOf(user)])).rows[0]
+  if (!owns) return void res.status(400).json({ error: 'Sucursal inválida' })
+
+  const product = (await pool.query(
+    'select id, name, is_raw_material from products where id = $1 and owner_id = $2',
+    [product_id, tenantOf(user)],
+  )).rows[0]
+  if (!product) return void res.status(400).json({ error: 'Producto inválido' })
+  if (product.is_raw_material) return void res.status(400).json({ error: 'Es materia prima: no tiene receta para producir' })
+
+  const recipe = (await pool.query(
+    `select r.ingredient_id, r.quantity, p.name, p.unit,
+       coalesce((select current_stock from inventory where branch_id = $2 and product_id = r.ingredient_id), 0) as available
+     from product_recipes r join products p on p.id = r.ingredient_id
+     where r.product_id = $1`,
+    [product_id, branch],
+  )).rows as { ingredient_id: string; quantity: number; name: string; unit: string; available: number }[]
+  if (recipe.length === 0) return void res.status(400).json({ error: 'Este producto no tiene receta definida' })
+
+  const shortages = recipe
+    .map((i) => ({ ...i, required: i.quantity * qty }))
+    .filter((i) => i.required > i.available)
+  if (shortages.length > 0 && !force) {
+    const detail = shortages.map((s) => `${s.name} (disponible ${r2(s.available)} ${s.unit}, necesita ${r2(s.required)} ${s.unit})`).join(', ')
+    return void res.status(409).json({ error: `Faltan insumos: ${detail}` })
+  }
+
+  const client = await pool.connect()
+  try {
+    await client.query('begin')
+    await client.query(
+      `insert into stock_movements (branch_id, product_id, type, quantity, manager_name) values ($1, $2, 'produccion', $3, $4)`,
+      [branch, product_id, qty, user.name],
+    )
+    for (const i of recipe) {
+      await client.query(
+        `insert into stock_movements (branch_id, product_id, type, quantity, manager_name, reason)
+         values ($1, $2, 'consumo_produccion', $3, $4, $5)`,
+        [branch, i.ingredient_id, i.quantity * qty, user.name, `Producción de ${qty} ${product.name}`],
+      )
+    }
+    for (const s of shortages) {
+      await client.query(
+        `insert into alerts (branch_id, product_id, type, message) values ($1, $2, 'insumo_negativo', $3)`,
+        [branch, s.ingredient_id,
+          `Producción de ${qty} ${product.name} consumió más ${s.name} del disponible: quedó en ${r2(s.available - s.required)} ${s.unit}. Revisar la receta o el stock cargado.`],
+      )
+    }
+    await client.query('commit')
+    res.json({ ok: true })
+  } catch (e) {
+    await client.query('rollback')
+    throw e
+  } finally {
+    client.release()
+  }
 }))
 
 app.get('/api/movements', authed(async (user, req, res) => {
@@ -523,10 +766,21 @@ app.get('/api/events', authed(async (user, _req, res) => {
   res.write('\n')
   sseClients.set(res, user.id)
   res.on('close', () => sseClients.delete(res))
+  res.on('error', (e) => {
+    console.error('SSE client error:', e)
+    sseClients.delete(res)
+  })
 }))
 
 setInterval(() => {
-  for (const c of sseClients.keys()) c.write(': ping\n\n')
+  for (const [c] of sseClients) {
+    try {
+      c.write(': ping\n\n')
+    } catch (e) {
+      console.error('SSE ping error:', e)
+      sseClients.delete(c)
+    }
+  }
 }, 30_000)
 
 async function sendPush(alert: { type: string; message: string }, owner: string) {
@@ -549,8 +803,15 @@ async function sendPush(alert: { type: string; message: string }, owner: string)
   )
 }
 
+let listenClient: pg.Client | null = null
+
 async function listenAlerts() {
+  if (listenClient) {
+    try { await listenClient.end() } catch { /* ya estaba cerrado */ }
+    listenClient = null
+  }
   const listener = new pg.Client({ connectionString: DATABASE_URL })
+  listenClient = listener
   await listener.connect()
   await listener.query('listen alerts')
   listener.on('notification', async (msg) => {
@@ -561,13 +822,22 @@ async function listenAlerts() {
         await pool.query('select owner_id from branches where id = $1', [alert.branch_id])
       ).rows[0]?.owner_id
       if (!owner) return
-      for (const [c, tenant] of sseClients) if (tenant === owner) c.write(`data: ${msg.payload}\n\n`)
+      for (const [c, tenant] of sseClients) {
+        if (tenant !== owner) continue
+        try {
+          c.write(`data: ${msg.payload}\n\n`)
+        } catch (e) {
+          console.error('SSE notify error:', e)
+          sseClients.delete(c)
+        }
+      }
       if (pushEnabled) await sendPush(alert, owner)
     } catch (e) {
       console.error(e)
     }
   })
-  listener.on('error', () => {
+  listener.on('error', (e) => {
+    console.error('LISTEN client error:', e)
     listener.end().catch(() => {})
     setTimeout(() => listenAlerts().catch(console.error), 5000) // reconexión simple
   })

@@ -111,4 +111,21 @@
   .input {
     @apply bg-surface border-2 border-line rounded-md px-3 py-2 text-ink placeholder:text-soft;
   }
+
+  /* Scroll fino color accent, a tono con el slider de páginas de Movimientos */
+  .scroll-accent {
+    scrollbar-width: thin;
+    scrollbar-color: var(--accent) var(--sunken);
+  }
+  .scroll-accent::-webkit-scrollbar {
+    width: 6px;
+  }
+  .scroll-accent::-webkit-scrollbar-track {
+    background: var(--sunken);
+    border-radius: 999px;
+  }
+  .scroll-accent::-webkit-scrollbar-thumb {
+    background: var(--accent);
+    border-radius: 999px;
+  }
 }

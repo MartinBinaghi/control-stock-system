@@ -20,6 +20,10 @@ export default function App() {
       return
     }
     api<Profile>('/me')
+      .catch(async () => {
+        await new Promise((r) => setTimeout(r, 1000))
+        return api<Profile>('/me')
+      })
       .then(setProfile)
       .catch(() => clearToken())
       .finally(() => setLoading(false))

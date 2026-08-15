@@ -32,7 +32,8 @@ async function extractPdfText(file: File): Promise<string> {
 
 type Msg = { text: string; kind: 'ok' | 'warn' | 'err' } | null
 
-export default function Remitos() {
+// branchId: ver comentario en Mostrador.tsx.
+export default function Remitos({ branchId }: { branchId?: string } = {}) {
   const [products, setProducts] = useState<Product[]>([])
   const [rows, setRows] = useState<Row[]>([])
   const [pdfName, setPdfName] = useState('')
@@ -44,9 +45,15 @@ export default function Remitos() {
   const [undoToast, setUndoToast] = useState<{ remito: Remito; items: Array<{ product_id: string; expected_qty: number; actual_qty: number }>; timeout: ReturnType<typeof setTimeout> } | null>(null)
 
   useEffect(() => {
-    api<Product[]>('/products').then(setProducts)
+    Promise.all([
+      api<Product[]>('/products'),
+      api<{ product_id: string; current_stock: number }[]>('/inventory' + (branchId ? `?branch=${branchId}` : '')),
+    ]).then(([products, inv]) => {
+      const stock = new Map(inv.map((i) => [i.product_id, i.current_stock]))
+      setProducts(products.map((p) => ({ ...p, current_stock: stock.get(p.id) ?? 0 })))
+    })
     loadHistory()
-  }, [])
+  }, [branchId])
 
   async function loadHistory() {
     try {
@@ -151,6 +158,7 @@ export default function Remitos() {
             expected_qty: r.expected ?? Number(r.actual),
             actual_qty: Number(r.actual),
           })),
+          ...(branchId ? { branch_id: branchId } : {}),
         }),
       })
       // Guardar para posible deshacer

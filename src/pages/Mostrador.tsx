@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import { ArrowDownCircle, ArrowUpCircle, Trash2, Clock, CheckCircle, XCircle, Plus, X } from 'lucide-react'
-import { api, getMovements, MOVEMENT_LABELS, type MovementType, type Product, type Movement } from '../lib/api'
+import { ArrowDownCircle, ArrowUpCircle, Cog, Trash2, Clock, CheckCircle, XCircle, Plus, X } from 'lucide-react'
+import { api, getMovements, produce, MOVEMENT_LABELS, type MovementType, type Product, type Movement } from '../lib/api'
 import Carpi from '../components/Carpi'
 
 const MERMA_CAUSAS = ['Vencimiento', 'Cadena de frío', 'Rotura', 'Otro']
@@ -22,10 +22,14 @@ function clearDraft() {
   localStorage.removeItem(DRAFT_KEY)
 }
 
-export default function Mostrador() {
+// branchId: solo lo usa el admin cuando entra a la "vista de encargado" de una
+// sucursal puntual (p. ej. si él mismo la atiende). Un encargado real no lo
+// recibe: el servidor ya limita todo a su propia sucursal.
+export default function Mostrador({ branchId }: { branchId?: string } = {}) {
   const [rows, setRows] = useState<Row[] | null>(null)
   const [modal, setModal] = useState<ModalState>(null)
   const [batchModal, setBatchModal] = useState<BatchModalState>(null)
+  const [producing, setProducing] = useState<Row | null>(null)
   const [filter, setFilter] = useState('')
   const [focusedIndex, setFocusedIndex] = useState(0)
   const [recentMovements, setRecentMovements] = useState<RecentMovement[]>([])
@@ -37,8 +41,8 @@ export default function Mostrador() {
   const load = useCallback(async () => {
     const [products, inv, movements] = await Promise.all([
       api<Product[]>('/products'),
-      api<{ product_id: string; current_stock: number }[]>('/inventory'),
-      getMovements(),
+      api<{ product_id: string; current_stock: number }[]>('/inventory' + (branchId ? `?branch=${branchId}` : '')),
+      getMovements(branchId),
     ])
     const stock = new Map(inv.map((i) => [i.product_id, i.current_stock]))
     setRows(products.map((p) => ({ ...p, current_stock: stock.get(p.id) ?? 0 })))
@@ -55,7 +59,7 @@ export default function Mostrador() {
         mermas: shiftMovements.filter((m) => m.type === 'merma').reduce((s, m) => s + m.quantity, 0),
       })
     }
-  }, [])
+  }, [branchId])
 
   useEffect(() => {
     load()
@@ -64,7 +68,7 @@ export default function Mostrador() {
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (modal || batchModal || (e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'SELECT') return
+      if (modal || batchModal || producing || (e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'SELECT') return
 
       const visibleRows = (rows ?? []).filter((r) => r.name.toLowerCase().includes(filter.toLowerCase()))
       if (visibleRows.length === 0) return
@@ -116,7 +120,7 @@ export default function Mostrador() {
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [modal, batchModal, rows, filter, focusedIndex])
+  }, [modal, batchModal, producing, rows, filter, focusedIndex])
 
   useEffect(() => {
     const list = listRef.current
@@ -165,6 +169,7 @@ export default function Mostrador() {
           type: movement.type,
           quantity: movement.quantity,
           reason: movement.reason,
+          ...(branchId ? { branch_id: branchId } : {}),
         }),
       })
       clearTimeout(undoToast.timeout)
@@ -318,6 +323,16 @@ export default function Mostrador() {
                   >
                     <Trash2 size={20} />
                   </button>
+                  {!r.is_raw_material && (
+                    <button
+                      title="Producir"
+                      aria-label={`Producir ${r.name}`}
+                      onClick={() => setProducing(r)}
+                      className="p-1.5 rounded-md cursor-pointer text-accent hover:bg-sunken min-w-[40px] min-h-[40px] flex items-center justify-center"
+                    >
+                      <Cog size={20} />
+                    </button>
+                  )}
                 </div>
               </li>
             )
@@ -528,6 +543,7 @@ export default function Mostrador() {
       {modal && (
         <MovementModal
           modal={modal}
+          branchId={branchId}
           onClose={() => setModal(null)}
           onSaved={(movement) => {
             setModal(null)
@@ -539,10 +555,23 @@ export default function Mostrador() {
       {batchModal && (
         <BatchMovementModal
           modal={batchModal}
+          branchId={branchId}
           onClose={() => setBatchModal(null)}
           onSaved={(movements) => {
             setBatchModal(null)
             movements.forEach(onMovementSaved)
+          }}
+        />
+      )}
+
+      {producing && (
+        <ProduceModal
+          product={producing}
+          branchId={branchId}
+          onClose={() => setProducing(null)}
+          onSaved={() => {
+            setProducing(null)
+            load()
           }}
         />
       )}
@@ -552,10 +581,12 @@ export default function Mostrador() {
 
 function MovementModal({
   modal,
+  branchId,
   onClose,
   onSaved,
 }: {
   modal: NonNullable<ModalState>
+  branchId?: string
   onClose: () => void
   onSaved: (movement: Movement) => void
 }) {
@@ -598,6 +629,7 @@ function MovementModal({
           type: modal.type,
           quantity: Number(qty),
           reason: isMerma ? causa : null,
+          ...(branchId ? { branch_id: branchId } : {}),
         }),
       })
       saveDraft(modal.type, qty, isMerma ? causa : undefined)
@@ -659,10 +691,12 @@ function MovementModal({
 
 function BatchMovementModal({
   modal,
+  branchId,
   onClose,
   onSaved,
 }: {
   modal: NonNullable<BatchModalState>
+  branchId?: string
   onClose: () => void
   onSaved: (movements: Movement[]) => void
 }) {
@@ -714,6 +748,7 @@ function BatchMovementModal({
               type: 'ingreso_manual' as MovementType,
               quantity: qty,
               reason: null,
+              ...(branchId ? { branch_id: branchId } : {}),
             }),
           })
         )
@@ -771,6 +806,83 @@ function BatchMovementModal({
           </button>
           <button disabled={busy} className="btn btn-primary">
             {busy ? 'Guardando…' : `Guardar ${modal.products.length} movimientos`}
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+function ProduceModal({ product, branchId, onClose, onSaved }: {
+  product: Row; branchId?: string; onClose: () => void; onSaved: () => void
+}) {
+  const [qty, setQty] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [onClose])
+
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    setBusy(true)
+    setError('')
+    const body = { product_id: product.id, quantity: Number(qty), ...(branchId ? { branch_id: branchId } : {}) }
+    try {
+      await produce(body)
+      onSaved()
+    } catch (e) {
+      const msg = (e as Error).message
+      // el server devuelve "Faltan insumos: ..." cuando algo quedaría negativo;
+      // se reintenta con force solo si el usuario confirma explícitamente
+      if (msg.startsWith('Faltan insumos') && confirm(`${msg}\n\n¿Confirmar la producción igual? Los insumos que falten quedan en stock negativo y se genera una alerta para revisar.`)) {
+        try {
+          await produce({ ...body, force: true })
+          onSaved()
+          return
+        } catch (e2) {
+          setError('No se pudo guardar: ' + (e2 as Error).message)
+        }
+      } else {
+        setError('No se pudo guardar: ' + msg)
+      }
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-10" onClick={onClose}>
+      <form
+        onSubmit={submit}
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Producir — ${product.name}`}
+        className="card p-6 w-full max-w-sm space-y-3"
+      >
+        <h2 className="font-pixel text-lg font-bold">Producir — {product.name}</h2>
+        <input
+          type="number"
+          required
+          autoFocus
+          min="0.01"
+          step="any"
+          placeholder={`Cantidad (${product.unit})`}
+          aria-label={`Cantidad en ${product.unit}`}
+          value={qty}
+          onChange={(e) => setQty(e.target.value)}
+          className="input w-full"
+        />
+        {error && <p className="text-danger text-sm bg-danger-soft border-2 border-danger/40 rounded-md p-2">{error}</p>}
+        <div className="flex gap-2 justify-end">
+          <button type="button" onClick={onClose} className="btn btn-ghost">
+            Cancelar
+          </button>
+          <button disabled={busy} className="btn btn-primary">
+            {busy ? 'Guardando…' : 'Producir'}
           </button>
         </div>
       </form>

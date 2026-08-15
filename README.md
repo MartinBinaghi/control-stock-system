@@ -20,20 +20,20 @@ psql -U postgres -d stock_db -f server/schema.sql
 ### 2. Servidor
 ```bash
 cp .env.example .env   # completar DATABASE_URL y JWT_SECRET (+ SMTP y APP_URL para los emails)
-npm install
-npm run dev:server     # API en http://localhost:3001
+pnpm install
+pnpm dev:server         # API en http://localhost:3001
 ```
 Los usuarios se crean desde la app: registro → email de verificación → cuenta admin; el admin invita trabajadores por email a cada sucursal. Sin `SMTP_HOST` configurado, los links de verificación/invitación se imprimen en la consola del servidor (útil en dev). Para crear un admin sin email o resetear una contraseña: `node server/create-user.ts <email> <password>`.
 
 ### 3. Frontend (desarrollo)
 ```bash
-npm run dev            # Vite en http://localhost:5173, proxya /api al 3001
+pnpm dev                # Vite en http://localhost:5173, proxya /api al 3001
 ```
 
 ### 4. Producción
 ```bash
-npm run build          # typecheck (app + server) + build a dist/
-npm start              # Express sirve la API y dist/ en el mismo puerto
+pnpm build              # typecheck (app + server) + build a dist/
+pnpm start              # Express sirve la API y dist/ en el mismo puerto
 ```
 HTTPS es requisito para PWA y push — poner un reverse proxy (Caddy/nginx/etc.) adelante.
 
