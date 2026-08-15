@@ -175,6 +175,7 @@ app.post('/api/login', authLimiter, async (req, res) => {
               ELSE locked_until 
             END
         WHERE id = $1
+        RETURNING failed_login_attempts, locked_until
       `, [u.id])
 
       return res.status(401).json({ error: 'Email o contraseña incorrectos' })
