@@ -153,6 +153,37 @@ app.post('/api/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body ?? {}
     const u = (await pool.query('select * from users where email = $1', [String(email ?? '').toLowerCase()])).rows[0]
+    // Verificar bloqueo ANTES de verificar password
+    if (u.locked_until && u.locked_until > new Date()) {
+      const mins = Math.ceil((u.locked_until.getTime() - Date.now()) / 60000)
+      return res.status(429).json({ error: `Cuenta bloqueada. Intente en ${mins} minutos.` })
+    }
+
+    if (!verifyPassword(password, u.password_hash)) {
+      const { rows } = await pool.query(`
+        UPDATE users 
+        SET failed_login_attempts = CASE 
+              WHEN locked_until IS NOT NULL AND locked_until < NOW() 
+              THEN 1 
+              ELSE failed_login_attempts + 1 
+            END,
+            locked_until = CASE 
+              WHEN locked_until IS NOT NULL AND locked_until < NOW() 
+              THEN NULL
+              WHEN failed_login_attempts + 1 >= 5 
+              THEN NOW() + INTERVAL '15 minutes' 
+              ELSE locked_until 
+            END
+        WHERE id = $1
+        RETURNING failed_login_attempts, locked_until
+      `, [u.id])
+
+      return res.status(401).json({ error: 'Email o contraseña incorrectos' })
+    }
+
+    // Login exitoso: resetear
+    await pool.query('update users set failed_login_attempts = 0, locked_until = null where id = $1', [u.id])
+
     if (!u?.password_hash || !verifyPassword(String(password ?? ''), u.password_hash))
       return void res.status(401).json({ error: 'Email o contraseña incorrectos' })
     if (!u.verified)
