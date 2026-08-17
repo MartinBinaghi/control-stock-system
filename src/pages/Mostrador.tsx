@@ -354,7 +354,7 @@ export default function Mostrador({ branchId }: { branchId?: string } = {}) {
         </section>
 
         {/* Right: History panel - always visible on desktop, hidden on mobile */}
-        <aside className="hidden lg:block w-72 lg:w-80 flex flex-col panel overflow-hidden shrink-0" aria-label="Historial de movimientos">
+        <aside className="hidden lg:block w-80 lg:w-96 flex flex-col panel overflow-hidden shrink-0" aria-label="Historial de movimientos">
           <header className="p-2 border-b-2 border-line bg-sunken shrink-0">
             <h3 className="font-pixel font-bold text-xs text-soft uppercase tracking-wide">Historial de movimientos</h3>
           </header>
@@ -362,16 +362,16 @@ export default function Mostrador({ branchId }: { branchId?: string } = {}) {
             {recentMovements.length === 0 ? (
               <div className="flex flex-col items-center gap-2 py-8 text-center text-soft h-full">
                 <Carpi size={48} title="Carpi tranquilo" />
-                <p className="text-xs">Sin movimientos aún</p>
+                <p className="text-sm">Sin movimientos aún</p>
               </div>
             ) : (
-              <table className="w-full text-xs">
+              <table className="w-full text-sm">
                 <thead className="bg-sunken sticky top-0 border-b-2 border-line">
                   <tr>
-                    <th className="p-1.5 text-left font-pixel">Hora</th>
-                    <th className="p-1.5 text-left font-pixel">Producto</th>
-                    <th className="p-1.5 text-left font-pixel">Tipo</th>
-                    <th className="p-1.5 text-right font-pixel tabular-nums">Cant.</th>
+                    <th className="p-2 text-left font-pixel">Hora</th>
+                    <th className="p-2 text-left font-pixel">Producto</th>
+                    <th className="p-2 text-left font-pixel">Tipo</th>
+                    <th className="p-2 text-right font-pixel tabular-nums">Cant.</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -401,7 +401,7 @@ export default function Mostrador({ branchId }: { branchId?: string } = {}) {
                         if (item.type === 'date-separator') {
                           return (
                             <tr key={`date-${index}`} className="border-t border-line/50">
-                              <td colSpan={4} className="p-1.5 text-center text-xs font-pixel bg-sunken/50">
+                              <td colSpan={4} className="p-2 text-center text-sm font-pixel bg-sunken/50">
                                 {item.date}
                               </td>
                             </tr>
@@ -410,10 +410,10 @@ export default function Mostrador({ branchId }: { branchId?: string } = {}) {
                           const m = item.data;
                           return (
                             <tr key={m.id} className="border-t border-line/50 hover:bg-sunken/50">
-                              <td className="p-1.5 whitespace-nowrap text-soft">{new Date(m.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</td>
-                              <td className="p-1.5 truncate max-w-[140px] font-medium">{m.product_name}</td>
-                              <td className="p-1.5">
-                                <span className={`px-1 py-0.5 rounded text-[9px] font-pixel ${
+                              <td className="p-2 whitespace-nowrap text-soft">{new Date(m.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</td>
+                              <td className="p-2 truncate max-w-[140px] font-medium">{m.product_name}</td>
+                              <td className="p-2">
+                                <span className={`px-2 py-1 rounded text-xs font-pixel whitespace-nowrap ${
                                   m.type === 'ingreso_manual' ? 'bg-ok-soft text-ok' :
                                   m.type === 'egreso_manual' ? 'bg-accent-soft text-accent' :
                                   m.type === 'merma' ? 'bg-danger-soft text-danger' :
@@ -422,7 +422,7 @@ export default function Mostrador({ branchId }: { branchId?: string } = {}) {
                                   {MOVEMENT_LABELS[m.type as MovementType] ?? m.type}
                                 </span>
                               </td>
-                              <td className="p-1.5 text-right tabular-nums font-medium">{m.quantity}</td>
+                              <td className="p-2 text-right tabular-nums font-medium">{m.quantity}</td>
                             </tr>
                           );
                         }
@@ -472,13 +472,13 @@ export default function Mostrador({ branchId }: { branchId?: string } = {}) {
           {recentMovements.length === 0 ? (
             <p className="text-center text-soft py-4 text-sm">Sin movimientos aún</p>
           ) : (
-            <table className="w-full text-xs">
+            <table className="w-full text-sm">
               <thead className="bg-sunken sticky top-0 border-b-2 border-line">
                 <tr>
-                  <th className="p-1.5 text-left font-pixel">Hora</th>
-                  <th className="p-1.5 text-left font-pixel">Producto</th>
-                  <th className="p-1.5 text-left font-pixel">Tipo</th>
-                  <th className="p-1.5 text-right font-pixel tabular-nums">Cant.</th>
+                  <th className="p-2 text-left font-pixel">Hora</th>
+                  <th className="p-2 text-left font-pixel">Producto</th>
+                  <th className="p-2 text-left font-pixel">Tipo</th>
+                  <th className="p-2 text-right font-pixel tabular-nums">Cant.</th>
                 </tr>
               </thead>
               <tbody>
@@ -508,7 +508,7 @@ export default function Mostrador({ branchId }: { branchId?: string } = {}) {
                       if (item.type === 'date-separator') {
                         return (
                           <tr key={`date-${index}`} className="border-t border-line/50">
-                            <td colSpan={4} className="p-1.5 text-center text-xs font-pixel bg-sunken/50">
+                            <td colSpan={4} className="p-2 text-center text-sm font-pixel bg-sunken/50">
                               {item.date}
                             </td>
                           </tr>
@@ -517,10 +517,10 @@ export default function Mostrador({ branchId }: { branchId?: string } = {}) {
                         const m = item.data;
                         return (
                           <tr key={m.id} className="border-t border-line/50 hover:bg-sunken/50">
-                            <td className="p-1.5 whitespace-nowrap text-soft">{new Date(m.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</td>
-                            <td className="p-1.5 truncate max-w-[120px] font-medium">{m.product_name}</td>
-                            <td className="p-1.5">
-                              <span className={`px-1 py-0.5 rounded text-[9px] font-pixel ${
+                            <td className="p-2 whitespace-nowrap text-soft">{new Date(m.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</td>
+                            <td className="p-2 truncate max-w-[120px] font-medium">{m.product_name}</td>
+                            <td className="p-2">
+                              <span className={`px-2 py-1 rounded text-xs font-pixel whitespace-nowrap ${
                                 m.type === 'ingreso_manual' ? 'bg-ok-soft text-ok' :
                                 m.type === 'egreso_manual' ? 'bg-accent-soft text-accent' :
                                 m.type === 'merma' ? 'bg-danger-soft text-danger' :
@@ -529,7 +529,7 @@ export default function Mostrador({ branchId }: { branchId?: string } = {}) {
                                 {MOVEMENT_LABELS[m.type as MovementType] ?? m.type}
                               </span>
                             </td>
-                            <td className="p-1.5 text-right tabular-nums font-medium">{m.quantity}</td>
+                            <td className="p-2 text-right tabular-nums font-medium">{m.quantity}</td>
                           </tr>
                         );
                       }
