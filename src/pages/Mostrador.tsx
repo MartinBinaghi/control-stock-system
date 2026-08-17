@@ -181,10 +181,10 @@ export default function Mostrador({ branchId }: { branchId?: string } = {}) {
   }
 
   return (
-    <div className="h-[calc(100vh-64px)] flex flex-col gap-3 p-3 lg:p-4">
+    <div className="h-[calc(100vh-64px)] flex flex-col gap-3 p-0 lg:p-2">
       {/* Header: search + shift controls */}
       <header className="flex flex-wrap gap-2 items-center shrink-0">
-        <div className="flex-1 min-w-0 lg:max-w-2xl">
+        <div className="flex-1 min-w-0">
           <input
             type="search"
             placeholder="Buscar producto… (ESC para limpiar)"
@@ -255,9 +255,9 @@ export default function Mostrador({ branchId }: { branchId?: string } = {}) {
       )}
 
       {/* Main split layout: Product list (left) + History (right) */}
-      <main className="flex-1 min-h-0 flex gap-3 lg:gap-4 overflow-hidden">
-        {/* Left: Product list */}
-        <section className="flex-1 min-w-0 lg:max-w-2xl flex flex-col overflow-hidden">
+      <main className="flex-1 min-h-0 grid lg:grid-cols-[1fr_minmax(320px,420px)] gap-3 lg:gap-4 overflow-hidden">
+        {/* Left: Product list - usa todo el ancho disponible (1fr) */}
+        <section className="min-w-0 flex flex-col overflow-hidden lg:col-span-1">
           <ul ref={listRef} className="space-y-1.5 flex-1 overflow-y-auto pr-1 pl-2 pt-2" role="listbox" aria-label="Productos">
             {visible.map((r, idx) => {
               const isSelected = selectedIds.has(r.id)
@@ -354,7 +354,7 @@ export default function Mostrador({ branchId }: { branchId?: string } = {}) {
         </section>
 
         {/* Right: History panel - always visible on desktop, hidden on mobile */}
-        <aside className="hidden lg:block w-80 lg:w-96 flex flex-col panel overflow-hidden shrink-0" aria-label="Historial de movimientos">
+        <aside className="hidden lg:block lg:col-span-1 flex flex-col panel overflow-hidden shrink-0" aria-label="Historial de movimientos">
           <header className="p-2 border-b-2 border-line bg-sunken shrink-0">
             <h3 className="font-pixel font-bold text-xs text-soft uppercase tracking-wide">Historial de movimientos</h3>
           </header>
@@ -365,7 +365,8 @@ export default function Mostrador({ branchId }: { branchId?: string } = {}) {
                 <p className="text-sm">Sin movimientos aún</p>
               </div>
             ) : (
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm whitespace-nowrap">
                 <thead className="bg-sunken sticky top-0 border-b-2 border-line">
                   <tr>
                     <th className="p-2 text-left font-pixel">Hora</th>
@@ -429,6 +430,7 @@ export default function Mostrador({ branchId }: { branchId?: string } = {}) {
                       })}
                 </tbody>
               </table>
+              </div>
             )}
           </div>
         </aside>
@@ -472,7 +474,8 @@ export default function Mostrador({ branchId }: { branchId?: string } = {}) {
           {recentMovements.length === 0 ? (
             <p className="text-center text-soft py-4 text-sm">Sin movimientos aún</p>
           ) : (
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm whitespace-nowrap">
               <thead className="bg-sunken sticky top-0 border-b-2 border-line">
                 <tr>
                   <th className="p-2 text-left font-pixel">Hora</th>
@@ -536,6 +539,7 @@ export default function Mostrador({ branchId }: { branchId?: string } = {}) {
                     })}
               </tbody>
             </table>
+              </div>
           )}
         </div>
       </div>
