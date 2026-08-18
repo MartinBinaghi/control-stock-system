@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { AlertTriangle, Bell, BellRing, Boxes, Building2, Check, ClipboardList, Cog, FileText, LogOut, Mail, RefreshCw, Trash2, Pencil, Repeat, Search } from 'lucide-react'
+import { AlertTriangle, Bell, BellRing, Boxes, Building2, Check, ClipboardList, Cog, FileText, LogOut, Mail, RefreshCw, Trash2, Pencil, Repeat, Search, Scale } from 'lucide-react'
 import {
   api, createAlert, createProcess, deleteBranch, deleteProcess, deleteProduct, getToken, resendInvite,
-  updateBranch, updateProcess, updateProduct, MOVEMENT_LABELS,
-  type Alert, type Branch, type MovementType, type Process, type Product, type RecipeItem, type Worker,
+  updateBranch, updateProcess, updateProduct, MOVEMENT_LABELS, createUnit, updateUnit, deleteUnit,
+  type Alert, type Branch, type MovementType, type Process, type Product, type RecipeItem, type Worker, type Unit,
 } from '../lib/api'
 import Carpi, { CarpiHead } from '../components/Carpi'
 import ThemeToggle from '../components/ThemeToggle'
@@ -21,7 +21,7 @@ type Movement = {
   reason: string | null
   created_at: string
 }
-type Tab = 'alertas' | 'stock' | 'movimientos' | 'sucursales' | 'procesos'
+type Tab = 'alertas' | 'stock' | 'movimientos' | 'sucursales' | 'procesos' | 'unidades'
 
 function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
   const padding = '='.repeat((4 - (base64.length % 4)) % 4)
@@ -58,6 +58,7 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
   const [alertsBranchFilter, setAlertsBranchFilter] = useState('')
   const [loadError, setLoadError] = useState('')
   const [viewAsBranch, setViewAsBranch] = useState<Branch | null>(null)
+  const [units, setUnits] = useState<Unit[]>([])
 
   const load = useCallback(async () => {
     const fetchAll = () =>
@@ -68,9 +69,10 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
         api<Alert[]>('/alerts'),
         api<Worker[]>('/team'),
         api<Process[]>('/processes'),
+        api<Unit[]>('/units'),
       ])
     try {
-      const [b, p, inv, al, tm, pr] = await fetchAll().catch(async (firstErr) => {
+      const [b, p, inv, al, tm, pr, un] = await fetchAll().catch(async (firstErr) => {
         await new Promise((r) => setTimeout(r, 1000))
         return fetchAll().catch(() => {
           throw firstErr
@@ -82,6 +84,7 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
       setAlerts(al)
       setTeam(tm)
       setProcesses(pr)
+      setUnits(un)
       setLoadError('')
     } catch (e) {
       setLoadError((e as Error).message)
@@ -216,6 +219,9 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
         <button onClick={() => setTab('procesos')} className={tabClass(tab === 'procesos')}>
           <Cog size={16} /> Procesos
         </button>
+        <button onClick={() => setTab('unidades')} className={tabClass(tab === 'unidades')}>
+          <Scale size={16} /> Unidades
+        </button>
       </nav>
 
       <main className="max-w-6xl mx-auto p-4">
@@ -232,7 +238,7 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
           />
         )}
         {tab === 'stock' && (
-          <StockTab branches={branches} products={products} processes={processes} inventory={inventory} onEdit={setEditing} onChanged={load} />
+          <StockTab branches={branches} products={products} processes={processes} inventory={inventory} onEdit={setEditing} onChanged={load} units={units} />
         )}
         {tab === 'movimientos' && (
           <MovimientosTab
@@ -247,6 +253,7 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
           />
         )}
         {tab === 'procesos' && <ProcesosTab processes={processes} products={products} onChanged={load} />}
+        {tab === 'unidades' && <UnidadesTab units={units} products={products} onChanged={load} />}
       </main>
 
       {editing && (
@@ -254,6 +261,7 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
           product={editing}
           processes={processes}
           products={products}
+          units={units}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null)
@@ -417,7 +425,7 @@ function RecipeBuilder({ recipe, setRecipe, candidates }: {
             </select>
             <input
               required type="number" min="0.001" step="any"
-              placeholder={ingredient ? `Cantidad (${ingredient.unit})` : 'Cantidad'}
+              placeholder={ingredient ? `Cantidad (${ingredient.unit_symbol ?? ingredient.unit})` : 'Cantidad'}
               aria-label="Cantidad de insumo" value={item.quantity || ''}
               onChange={(e) => updateRow(i, { quantity: Number(e.target.value) })}
               className={`${input} w-32`}
@@ -437,9 +445,9 @@ function RecipeBuilder({ recipe, setRecipe, candidates }: {
   )
 }
 
-function StockTab({ branches, products, processes, inventory, onEdit, onChanged }: {
+function StockTab({ branches, products, processes, inventory, onEdit, onChanged, units }: {
   branches: Branch[]; products: Product[]; processes: Process[]; inventory: InvRow[]
-  onEdit: (p: Product) => void; onChanged: () => void
+  onEdit: (p: Product) => void; onChanged: () => void; units: Unit[]
 }) {
   const [branchFilter, setBranchFilter] = useState('')
   const [processFilter, setProcessFilter] = useState('')
@@ -495,7 +503,12 @@ function StockTab({ branches, products, processes, inventory, onEdit, onChanged 
         <div className="flex flex-wrap gap-2 items-center">
           <input required placeholder="Nombre" aria-label="Nombre del producto" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={input} />
           <input placeholder="Categoría" aria-label="Categoría" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className={input} />
-          <input required placeholder="Unidad (kg, plancha…)" aria-label="Unidad" value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} className={input} />
+          <select required value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} aria-label="Unidad" className={input}>
+            <option value="">Unidad…</option>
+            {units.map((u) => (
+              <option key={u.id} value={u.name}>{u.name}{u.symbol ? ` (${u.symbol})` : ''}</option>
+            ))}
+          </select>
           <input type="number" min="0" step="any" placeholder="Stock mínimo" aria-label="Stock mínimo" value={form.min} onChange={(e) => setForm({ ...form, min: e.target.value })} className={`${input} w-32`} />
         </div>
         <ProcessFields
@@ -598,7 +611,7 @@ function StockTab({ branches, products, processes, inventory, onEdit, onChanged 
                         </td>
                       )
                     })}
-                    <td className="p-2 font-semibold">{fmt(total)} {p.unit}</td>
+                    <td className="p-2 font-semibold">{fmt(total)} {p.unit_symbol ?? p.unit}</td>
                   </tr>
                 )
               })}
@@ -718,7 +731,7 @@ function ProcesosTab({ processes, products, onChanged }: { processes: Process[];
                                   {pr.recipe
                                     .map((r) => {
                                       const ing = products.find((x) => x.id === r.ingredient_id)
-                                      return ing ? `${ing.name} (${fmt(r.quantity)} ${ing.unit})` : null
+                                      return ing ? `${ing.name} (${fmt(r.quantity)} ${ing.unit_symbol ?? ing.unit})` : null
                                     })
                                     .filter(Boolean)
                                     .join(', ')}
@@ -735,6 +748,114 @@ function ProcesosTab({ processes, products, onChanged }: { processes: Process[];
             )
           })}
           {processes.length === 0 && <p className="text-soft text-sm">Todavía no hay procesos — creá uno arriba.</p>}
+        </ul>
+      </section>
+      {confirming && <ConfirmModal message={confirming.message} onConfirm={confirming.onConfirm} onCancel={() => setConfirming(null)} />}
+    </div>
+  )
+}
+
+function UnidadesTab({ units, products, onChanged }: { units: Unit[]; products: Product[]; onChanged: () => void }) {
+  const [name, setName] = useState('')
+  const [symbol, setSymbol] = useState('')
+  const [msg, setMsg] = useState<{ text: string; kind: 'ok' | 'err' } | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingName, setEditingName] = useState('')
+  const [editingSymbol, setEditingSymbol] = useState('')
+  const [confirming, setConfirming] = useState<ConfirmState>(null)
+
+  async function run(fn: () => Promise<unknown>, ok: string) {
+    setMsg(null)
+    try {
+      await fn()
+      setMsg({ text: ok, kind: 'ok' })
+      onChanged()
+    } catch (e) {
+      setMsg({ text: 'Error: ' + (e as Error).message, kind: 'err' })
+    }
+  }
+
+  function addUnit(e: FormEvent) {
+    e.preventDefault()
+    run(async () => {
+      await createUnit({ name: name.trim(), symbol: symbol.trim() || null })
+      setName('')
+      setSymbol('')
+    }, 'Unidad creada.')
+  }
+
+  function saveEdit(e: FormEvent) {
+    e.preventDefault()
+    run(() => updateUnit(editingId!, { name: editingName.trim(), symbol: editingSymbol.trim() || null }), 'Unidad actualizada.').then(() => setEditingId(null))
+  }
+
+  return (
+    <div className="space-y-6">
+      <section className="card p-4">
+        <h2 className={sectionTitle}>Nueva unidad</h2>
+        <form onSubmit={addUnit} className="flex flex-wrap gap-2 items-center">
+          <input required placeholder="Nombre (ej: Kilogramo)" aria-label="Nombre de la unidad" value={name} onChange={(e) => setName(e.target.value)} className={`${input} flex-1 min-w-[14rem]`} />
+          <input placeholder="Símbolo (ej: kg)" aria-label="Símbolo de la unidad" value={symbol} onChange={(e) => setSymbol(e.target.value)} className={input} />
+          <button className="btn btn-primary px-4 py-1.5">Crear</button>
+        </form>
+        {msg && (
+          <p className={`text-sm rounded-md border-2 p-2 mt-2 ${msg.kind === 'ok' ? 'text-ok bg-ok-soft border-ok/40' : 'text-danger bg-danger-soft border-danger/40'}`}>
+            {msg.text}
+          </p>
+        )}
+      </section>
+
+      <section>
+        <h2 className={sectionTitle}>Unidades ({units.length})</h2>
+        <ul className="space-y-2">
+          {units.map((u) => {
+            const productCount = products.filter((p: Product) => p.unit === u.name).length
+            return (
+              <li key={u.id} className="panel p-3">
+                {editingId === u.id ? (
+                  <form onSubmit={saveEdit} className="flex gap-2 items-center flex-wrap">
+                    <input required autoFocus value={editingName} onChange={(e) => setEditingName(e.target.value)} aria-label="Nombre de la unidad" className={`${input} flex-1 min-w-[12rem]`} />
+                    <input value={editingSymbol} onChange={(e) => setEditingSymbol(e.target.value)} aria-label="Símbolo de la unidad" className={`${input} w-24`} placeholder="Símbolo" />
+                    <button type="button" onClick={() => setEditingId(null)} className="btn btn-ghost px-3 py-1 text-sm">Cancelar</button>
+                    <button className="btn btn-primary px-3 py-1 text-sm">Guardar</button>
+                  </form>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div>
+                        <p className="font-medium">{u.name}</p>
+                        {u.symbol && <p className="text-xs text-soft">Símbolo: {u.symbol}</p>}
+                        {productCount > 0 && <p className="text-xs text-soft">{productCount} producto{productCount === 1 ? '' : 's'} usan esta unidad</p>}
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          onClick={() => { setEditingId(u.id); setEditingName(u.name); setEditingSymbol(u.symbol ?? '') }}
+                          title="Editar unidad" aria-label={`Editar ${u.name}`}
+                          className="p-1.5 text-soft hover:bg-sunken rounded-md cursor-pointer"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          onClick={() => setConfirming({
+                            message: productCount > 0
+                              ? `¿Eliminar la unidad "${u.name}"? La usan ${productCount} producto${productCount === 1 ? '' : 's'}. No se puede eliminar mientras la usen.`
+                              : `¿Eliminar la unidad "${u.name}"?`,
+                            onConfirm: () => { setConfirming(null); run(() => deleteUnit(u.id), 'Unidad eliminada.') },
+                          })}
+                          title="Eliminar unidad" aria-label={`Eliminar ${u.name}`}
+                          className="p-1.5 text-danger hover:bg-danger-soft rounded-md cursor-pointer"
+                          disabled={productCount > 0}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </li>
+            )
+          })}
+          {units.length === 0 && <p className="text-soft text-sm">Todavía no hay unidades — creá una arriba.</p>}
         </ul>
       </section>
       {confirming && <ConfirmModal message={confirming.message} onConfirm={confirming.onConfirm} onCancel={() => setConfirming(null)} />}
@@ -997,7 +1118,7 @@ function BranchCard({ branch, team, alerts, products, inventory, onChanged, onVi
             {stockRows.map(({ p, s }) => (
               <li key={p.id} className={`flex justify-between gap-2 ${s < p.min_stock_threshold ? 'text-danger font-semibold' : ''}`}>
                 <span className="truncate">{p.name}</span>
-                <span className="tabular-nums shrink-0">{fmt(s)} {p.unit}</span>
+                <span className="tabular-nums shrink-0">{fmt(s)} {p.unit_symbol ?? p.unit}</span>
               </li>
             ))}
           </ul>
@@ -1128,8 +1249,8 @@ function ConfirmModal({ message, onConfirm, onCancel }: { message: string; onCon
   )
 }
 
-function EditProductModal({ product, processes, products, onClose, onSaved }: {
-  product: Product; processes: Process[]; products: Product[]; onClose: () => void; onSaved: () => void
+function EditProductModal({ product, processes, products, units, onClose, onSaved }: {
+  product: Product; processes: Process[]; products: Product[]; units: Unit[]; onClose: () => void; onSaved: () => void
 }) {
   const [form, setForm] = useState({
     name: product.name,
@@ -1174,7 +1295,12 @@ function EditProductModal({ product, processes, products, onClose, onSaved }: {
         <h2 className="font-pixel text-lg">Editar producto</h2>
         <input required placeholder="Nombre" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="input w-full px-3 py-2" />
         <input placeholder="Categoría" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="input w-full px-3 py-2" />
-        <input required placeholder="Unidad (kg, plancha…)" value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} className="input w-full px-3 py-2" />
+        <select required value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} className="input w-full px-3 py-2">
+          <option value="">Unidad…</option>
+          {units.map((u) => (
+            <option key={u.id} value={u.name}>{u.name}{u.symbol ? ` (${u.symbol})` : ''}</option>
+          ))}
+        </select>
         <input type="number" min="0" step="any" placeholder="Stock mínimo" value={form.min} onChange={(e) => setForm({ ...form, min: e.target.value })} className="input w-full px-3 py-2" />
         <ProcessFields
           processes={processes} products={products} excludeProductId={product.id}

@@ -332,14 +332,66 @@ app.delete('/api/processes/:id', authed(async (user, req, res) => {
   }
 }))
 
+// ---------- Unidades de medida ----------
+
+app.get('/api/units', authed(async (user, _req, res) => {
+  res.json((await pool.query('select * from units where owner_id = $1 order by name', [tenantOf(user)])).rows)
+}))
+
+app.post('/api/units', authed(async (user, req, res) => {
+  if (user.role !== 'admin') return void res.status(403).json({ error: 'Solo admin' })
+  const { name, symbol } = req.body ?? {}
+  if (!String(name ?? '').trim()) return void res.status(400).json({ error: 'Falta el nombre' })
+  try {
+    const r = await pool.query(
+      'insert into units (owner_id, name, symbol) values ($1, $2, $3) returning *',
+      [user.id, String(name).trim(), symbol?.trim() || null],
+    )
+    res.json(r.rows[0])
+  } catch (e) {
+    if ((e as { code?: string }).code === '23505')
+      return void res.status(400).json({ error: 'Ya existe una unidad con ese nombre' })
+    throw e
+  }
+}))
+
+app.patch('/api/units/:id', authed(async (user, req, res) => {
+  if (user.role !== 'admin') return void res.status(403).json({ error: 'Solo admin' })
+  const { name, symbol } = req.body ?? {}
+  if (!String(name ?? '').trim()) return void res.status(400).json({ error: 'Falta el nombre' })
+  const r = await pool.query(
+    'update units set name = $1, symbol = $2 where id = $3 and owner_id = $4 returning *',
+    [String(name).trim(), symbol?.trim() || null, req.params.id, user.id],
+  )
+  if (!r.rows[0]) return void res.status(404).json({ error: 'Unidad no encontrada' })
+  res.json(r.rows[0])
+}))
+
+app.delete('/api/units/:id', authed(async (user, req, res) => {
+  if (user.role !== 'admin') return void res.status(403).json({ error: 'Solo admin' })
+  try {
+    const r = await pool.query('delete from units where id = $1 and owner_id = $2 returning id', [req.params.id, user.id])
+    if (!r.rows[0]) return void res.status(404).json({ error: 'Unidad no encontrada' })
+    res.json({ ok: true })
+  } catch (e) {
+    if ((e as { code?: string }).code === '23503')
+      return void res.status(400).json({ error: 'No se puede eliminar: hay productos que usan esta unidad' })
+    throw e
+  }
+}))
+
 app.get('/api/products', authed(async (user, _req, res) => {
   res.json((await pool.query(
-    `select p.*, coalesce(
+    `select p.*, u.symbol as unit_symbol, coalesce(
        (select json_agg(json_build_object('ingredient_id', r.ingredient_id, 'quantity', r.quantity))
         from product_recipes r where r.product_id = p.id),
        '[]'
      ) as recipe
-     from products p where p.owner_id = $1 and p.active order by p.name`,
+     from products p
+     left join units u on u.id = (
+       select id from units where owner_id = $1 and name = p.unit limit 1
+     )
+     where p.owner_id = $1 and p.active order by p.name`,
     [tenantOf(user)],
   )).rows)
 }))
@@ -386,8 +438,17 @@ app.post('/api/products', authed(async (user, req, res) => {
       [user.id, String(name).trim(), category || null, unit, min_stock_threshold, process_id || null, isRaw],
     )).rows[0]
     await saveRecipe(client, product.id, process_id || null, isRaw, Array.isArray(recipe) ? recipe : [], user.id)
+    // fetch with unit_symbol for immediate UI update
+    const productWithSymbol = (await client.query(
+      `select p.*, u.symbol as unit_symbol from products p
+       left join units u on u.id = (
+         select id from units where owner_id = $1 and name = p.unit limit 1
+       )
+       where p.id = $2`,
+      [user.id, product.id],
+    )).rows[0]
     await client.query('commit')
-    res.json(product)
+    res.json(productWithSymbol)
   } catch (e) {
     await client.query('rollback')
     throw e
@@ -413,8 +474,17 @@ app.patch('/api/products/:id', authed(async (user, req, res) => {
     )).rows[0]
     if (!product) { await client.query('rollback'); return void res.status(404).json({ error: 'Producto no encontrado' }) }
     await saveRecipe(client, product.id, process_id || null, isRaw, Array.isArray(recipe) ? recipe : [], user.id)
+    // fetch with unit_symbol for immediate UI update
+    const productWithSymbol = (await client.query(
+      `select p.*, u.symbol as unit_symbol from products p
+       left join units u on u.id = (
+         select id from units where owner_id = $1 and name = p.unit limit 1
+       )
+       where p.id = $2`,
+      [user.id, product.id],
+    )).rows[0]
     await client.query('commit')
-    res.json(product)
+    res.json(productWithSymbol)
   } catch (e) {
     await client.query('rollback')
     throw e
