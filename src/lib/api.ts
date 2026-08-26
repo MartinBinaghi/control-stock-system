@@ -49,12 +49,15 @@ export type Product = {
   name: string
   category: string | null
   unit: string
+  unit_symbol: string | null
   min_stock_threshold: number
   process_id: string | null
   is_raw_material: boolean
   recipe: RecipeItem[]
   current_stock?: number
 }
+
+export type Unit = { id: string; name: string; symbol: string | null }
 
 export type Branch = { id: string; name: string; address: string | null }
 
@@ -148,6 +151,22 @@ export function updateBranch(id: string, data: { name: string; address: string |
 
 export function deleteBranch(id: string) {
   return api(`/branches/${id}`, { method: 'DELETE' })
+}
+
+export function getUnits() {
+  return api<Unit[]>('/units')
+}
+
+export function createUnit(data: { name: string; symbol?: string | null }) {
+  return api<Unit>('/units', { method: 'POST', body: JSON.stringify(data) })
+}
+
+export function updateUnit(id: string, data: { name: string; symbol?: string | null }) {
+  return api<Unit>(`/units/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+}
+
+export function deleteUnit(id: string) {
+  return api(`/units/${id}`, { method: 'DELETE' })
 }
 
 export function resendInvite(id: string) {

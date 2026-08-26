@@ -294,7 +294,7 @@ export default function Mostrador({ branchId }: { branchId?: string } = {}) {
                     <p className="font-medium truncate">{r.name}</p>
                     <div className="flex items-center gap-2 mt-0.5">
                         <span className={`tabular-nums font-mono ${r.current_stock < r.min_stock_threshold ? 'text-danger font-semibold' : 'text-ok font-semibold'}`}>
-                          {r.current_stock} {r.unit}
+                          {r.current_stock} {r.unit_symbol ?? r.unit}
                         </span>
                       </div>
                   </div>
@@ -442,7 +442,7 @@ export default function Mostrador({ branchId }: { branchId?: string } = {}) {
             <div className="flex-1 min-w-0">
               <p className="font-medium text-sm">Movimiento guardado</p>
               <p className="text-xs text-soft truncate">
-                {MOVEMENT_LABELS[undoToast.movement.type as MovementType]}: {undoToast.movement.quantity} {rows?.find(p => p.id === undoToast.movement.product_id)?.unit ?? ''}
+                {MOVEMENT_LABELS[undoToast.movement.type as MovementType]}: {undoToast.movement.quantity} {rows?.find(p => p.id === undoToast.movement.product_id)?.unit_symbol ?? rows?.find(p => p.id === undoToast.movement.product_id)?.unit ?? ''}
               </p>
             </div>
             <button
@@ -650,15 +650,15 @@ function MovementModal({
         <h2 className="font-pixel text-lg font-bold">
           {title} — {modal.product.name}
         </h2>
-        <p className="text-xs text-soft">Stock actual: {modal.product.current_stock} {modal.product.unit}</p>
+        <p className="text-xs text-soft">Stock actual: {modal.product.current_stock} {modal.product.unit_symbol ?? modal.product.unit}</p>
         <input
           type="number"
           required
           autoFocus
           min="1"
           step="1"
-          placeholder={`Cantidad (${modal.product.unit})`}
-          aria-label={`Cantidad en ${modal.product.unit}`}
+          placeholder={`Cantidad (${modal.product.unit_symbol ?? modal.product.unit})`}
+          aria-label={`Cantidad en ${modal.product.unit_symbol ?? modal.product.unit}`}
           value={qty}
           onChange={(e) => { setQty(e.target.value); saveDraft(modal.type, e.target.value, causa) }}
           className="input w-full text-lg"
@@ -782,13 +782,13 @@ function BatchMovementModal({
               <div key={p.id} className="panel p-3 flex items-center gap-3">
                 <div className="flex-1 min-w-0">
                   <p className="font-medium truncate">{p.name}</p>
-                  <p className="text-xs text-soft">Stock: {p.current_stock} {p.unit}</p>
+                  <p className="text-xs text-soft">Stock: {p.current_stock} {p.unit_symbol ?? p.unit}</p>
                 </div>
                 <input
                   type="number"
                   min="1"
                   step="1"
-                  placeholder={`Cant. (${p.unit})`}
+                  placeholder={`Cant. (${p.unit_symbol ?? p.unit})`}
                   value={entry.qty}
                   onChange={(e) => updateQty(p.id, e.target.value)}
                   className={`input w-24 text-center ${err ? 'border-danger' : ''}`}
@@ -870,8 +870,8 @@ function ProduceModal({ product, branchId, onClose, onSaved }: {
           autoFocus
           min="0.01"
           step="any"
-          placeholder={`Cantidad (${product.unit})`}
-          aria-label={`Cantidad en ${product.unit}`}
+          placeholder={`Cantidad (${product.unit_symbol ?? product.unit})`}
+          aria-label={`Cantidad en ${product.unit_symbol ?? product.unit}`}
           value={qty}
           onChange={(e) => setQty(e.target.value)}
           className="input w-full"

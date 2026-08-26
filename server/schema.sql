@@ -44,6 +44,16 @@ create table processes (
   created_at timestamptz not null default now()
 );
 
+-- Unidades de medida configurables por negocio
+create table units (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null references users on delete cascade,
+  name text not null,
+  symbol text,
+  created_at timestamptz not null default now(),
+  unique (owner_id, name)
+);
+
 create table products (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null references users on delete cascade,
@@ -205,3 +215,16 @@ create trigger trg_notify_alert
 alter table users add column failed_login_attempts int not null default 0;
 alter table users add column locked_until timestamptz;
 create index on users (locked_until) where locked_until is not null;
+
+-- Unidades por defecto para nuevos admins (se insertan vía trigger en signup o manualmente)
+-- insert into units (owner_id, name, symbol) values
+--   (<admin_id>, 'Kilogramo', 'kg'),
+--   (<admin_id>, 'Unidad', 'und'),
+--   (<admin_id>, 'Litro', 'l'),
+--   (<admin_id>, 'Gramo', 'g'),
+--   (<admin_id>, 'Mililitro', 'ml'),
+--   (<admin_id>, 'Metro', 'm'),
+--   (<admin_id>, 'Centímetro', 'cm'),
+--   (<admin_id>, 'Paquete', 'pq'),
+--   (<admin_id>, 'Caja', 'cj'),
+--   (<admin_id>, 'Bolsa', 'bl');
