@@ -1,9 +1,20 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import { ArrowDownCircle, ArrowUpCircle, Cog, Trash2, Clock, CheckCircle, XCircle, Plus, X } from 'lucide-react'
+import { ArrowDownCircle, ArrowUpCircle, Cog, Trash2, Clock, CheckCircle, XCircle, Plus, X, Truck, PackageMinus } from 'lucide-react'
 import { api, getMovements, produce, MOVEMENT_LABELS, type MovementType, type Product, type Movement } from '../lib/api'
 import Carpi from '../components/Carpi'
 
 const MERMA_CAUSAS = ['Vencimiento', 'Cadena de frío', 'Rotura', 'Otro']
+
+// Icono por tipo de movimiento: sirve para identificar el tipo de un vistazo
+// aunque la etiqueta de texto quede truncada por el ancho de la columna.
+const MOVEMENT_ICONS: Record<MovementType, typeof ArrowUpCircle> = {
+  ingreso_manual: ArrowUpCircle,
+  egreso_manual: ArrowDownCircle,
+  merma: Trash2,
+  remito_fabrica: Truck,
+  produccion: Cog,
+  consumo_produccion: PackageMinus,
+}
 
 type Row = Product & { current_stock: number }
 type ModalState = { product: Row; type: MovementType } | null
@@ -255,7 +266,7 @@ export default function Mostrador({ branchId }: { branchId?: string } = {}) {
       )}
 
       {/* Main split layout: Product list (left) + History (right) */}
-      <main className="flex-1 min-h-0 grid lg:grid-cols-[1fr_minmax(320px,420px)] gap-3 lg:gap-4 overflow-hidden">
+      <main className="flex-1 min-h-0 grid lg:grid-cols-[minmax(20rem,1fr)_minmax(24rem,30rem)] gap-3 lg:gap-4 overflow-hidden">
         {/* Left: Product list - usa todo el ancho disponible (1fr) */}
         <section className="min-w-0 flex flex-col overflow-hidden lg:col-span-1">
           <ul ref={listRef} className="space-y-1.5 flex-1 overflow-y-auto pr-1 pl-2 pt-2" role="listbox" aria-label="Productos">
@@ -366,13 +377,13 @@ export default function Mostrador({ branchId }: { branchId?: string } = {}) {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-sm whitespace-nowrap">
+                <table className="w-full table-fixed text-sm">
                 <thead className="bg-sunken sticky top-0 border-b-2 border-line">
                   <tr>
-                    <th className="p-2 text-left font-pixel">Hora</th>
-                    <th className="p-2 text-left font-pixel">Producto</th>
-                    <th className="p-2 text-left font-pixel">Tipo</th>
-                    <th className="p-2 text-right font-pixel tabular-nums">Cant.</th>
+                    <th className="p-2 text-left font-pixel w-[16%]">Hora</th>
+                    <th className="p-2 text-left font-pixel w-[34%]">Producto</th>
+                    <th className="p-2 text-left font-pixel w-[30%]">Tipo</th>
+                    <th className="p-2 text-right font-pixel tabular-nums w-[20%]">Cant.</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -409,21 +420,26 @@ export default function Mostrador({ branchId }: { branchId?: string } = {}) {
                           );
                         } else {
                           const m = item.data;
+                          const label = MOVEMENT_LABELS[m.type as MovementType] ?? m.type
+                          const Icon = MOVEMENT_ICONS[m.type as MovementType]
                           return (
                             <tr key={m.id} className="border-t border-line/50 hover:bg-sunken/50">
-                              <td className="p-2 whitespace-nowrap text-soft">{new Date(m.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</td>
-                              <td className="p-2 truncate max-w-[140px] font-medium">{m.product_name}</td>
+                              <td className="p-2 truncate text-soft">{new Date(m.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</td>
+                              <td className="p-2 truncate font-medium">{m.product_name}</td>
                               <td className="p-2">
-                                <span className={`px-2 py-1 rounded text-xs font-pixel whitespace-nowrap ${
+                                <span
+                                  title={label}
+                                  className={`flex items-center gap-1 max-w-full px-2 py-1 rounded text-xs font-pixel ${
                                   m.type === 'ingreso_manual' ? 'bg-ok-soft text-ok' :
                                   m.type === 'egreso_manual' ? 'bg-accent-soft text-accent' :
                                   m.type === 'merma' ? 'bg-danger-soft text-danger' :
                                   'bg-warn-soft text-warn'
                                 }`}>
-                                  {MOVEMENT_LABELS[m.type as MovementType] ?? m.type}
+                                  {Icon && <Icon size={12} className="shrink-0" />}
+                                  <span className="truncate min-w-0">{label}</span>
                                 </span>
                               </td>
-                              <td className="p-2 text-right tabular-nums font-medium">{m.quantity}</td>
+                              <td className="p-2 truncate text-right tabular-nums font-medium">{m.quantity}</td>
                             </tr>
                           );
                         }
@@ -475,13 +491,13 @@ export default function Mostrador({ branchId }: { branchId?: string } = {}) {
             <p className="text-center text-soft py-4 text-sm">Sin movimientos aún</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm whitespace-nowrap">
+              <table className="w-full table-fixed text-sm">
               <thead className="bg-sunken sticky top-0 border-b-2 border-line">
                 <tr>
-                  <th className="p-2 text-left font-pixel">Hora</th>
-                  <th className="p-2 text-left font-pixel">Producto</th>
-                  <th className="p-2 text-left font-pixel">Tipo</th>
-                  <th className="p-2 text-right font-pixel tabular-nums">Cant.</th>
+                  <th className="p-2 text-left font-pixel w-[16%]">Hora</th>
+                  <th className="p-2 text-left font-pixel w-[34%]">Producto</th>
+                  <th className="p-2 text-left font-pixel w-[30%]">Tipo</th>
+                  <th className="p-2 text-right font-pixel tabular-nums w-[20%]">Cant.</th>
                 </tr>
               </thead>
               <tbody>
@@ -518,21 +534,26 @@ export default function Mostrador({ branchId }: { branchId?: string } = {}) {
                         );
                       } else {
                         const m = item.data;
+                        const label = MOVEMENT_LABELS[m.type as MovementType] ?? m.type
+                        const Icon = MOVEMENT_ICONS[m.type as MovementType]
                         return (
                           <tr key={m.id} className="border-t border-line/50 hover:bg-sunken/50">
-                            <td className="p-2 whitespace-nowrap text-soft">{new Date(m.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</td>
-                            <td className="p-2 truncate max-w-[120px] font-medium">{m.product_name}</td>
+                            <td className="p-2 truncate text-soft">{new Date(m.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</td>
+                            <td className="p-2 truncate font-medium">{m.product_name}</td>
                             <td className="p-2">
-                              <span className={`px-2 py-1 rounded text-xs font-pixel whitespace-nowrap ${
+                              <span
+                                title={label}
+                                className={`flex items-center gap-1 max-w-full px-2 py-1 rounded text-xs font-pixel ${
                                 m.type === 'ingreso_manual' ? 'bg-ok-soft text-ok' :
                                 m.type === 'egreso_manual' ? 'bg-accent-soft text-accent' :
                                 m.type === 'merma' ? 'bg-danger-soft text-danger' :
                                 'bg-warn-soft text-warn'
                               }`}>
-                                {MOVEMENT_LABELS[m.type as MovementType] ?? m.type}
+                                {Icon && <Icon size={12} className="shrink-0" />}
+                                <span className="truncate min-w-0">{label}</span>
                               </span>
                             </td>
-                            <td className="p-2 text-right tabular-nums font-medium">{m.quantity}</td>
+                            <td className="p-2 truncate text-right tabular-nums font-medium">{m.quantity}</td>
                           </tr>
                         );
                       }
