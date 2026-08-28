@@ -342,6 +342,8 @@ app.post('/api/units', authed(async (user, req, res) => {
   if (user.role !== 'admin') return void res.status(403).json({ error: 'Solo admin' })
   const { name, symbol } = req.body ?? {}
   if (!String(name ?? '').trim()) return void res.status(400).json({ error: 'Falta el nombre' })
+  if (String(name).trim().length > 20) return void res.status(400).json({ error: 'El nombre no puede superar los 20 caracteres' })
+  if ((symbol?.trim() || '').length > 3) return void res.status(400).json({ error: 'El símbolo no puede superar los 3 caracteres' })
   try {
     const r = await pool.query(
       'insert into units (owner_id, name, symbol) values ($1, $2, $3) returning *',
@@ -359,6 +361,8 @@ app.patch('/api/units/:id', authed(async (user, req, res) => {
   if (user.role !== 'admin') return void res.status(403).json({ error: 'Solo admin' })
   const { name, symbol } = req.body ?? {}
   if (!String(name ?? '').trim()) return void res.status(400).json({ error: 'Falta el nombre' })
+  if (String(name).trim().length > 20) return void res.status(400).json({ error: 'El nombre no puede superar los 20 caracteres' })
+  if ((symbol?.trim() || '').length > 3) return void res.status(400).json({ error: 'El símbolo no puede superar los 3 caracteres' })
   const r = await pool.query(
     'update units set name = $1, symbol = $2 where id = $3 and owner_id = $4 returning *',
     [String(name).trim(), symbol?.trim() || null, req.params.id, user.id],
