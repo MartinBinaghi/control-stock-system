@@ -9,7 +9,8 @@
     "dev:server": "node --watch server/index.ts",
     "start": "node server/index.ts",
     "build": "tsc --noEmit && tsc -p tsconfig.server.json && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "migrate": "node server/migrate.ts"
   },
   "dependencies": {
     "@types/helmet": "^0.0.48",

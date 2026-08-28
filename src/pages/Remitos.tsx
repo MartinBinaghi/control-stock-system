@@ -297,7 +297,7 @@ export default function Remitos({ branchId }: { branchId?: string } = {}) {
                           </select>
                         </td>
                         <td className="p-2 tabular-nums text-soft">
-                          {product ? `${product.current_stock} ${product.unit}` : '—'}
+                          {product ? `${product.current_stock} ${product.unit_symbol ?? product.unit}` : '—'}
                         </td>
                         <td className="p-2">
                           <input
@@ -464,10 +464,10 @@ export default function Remitos({ branchId }: { branchId?: string } = {}) {
                   return (
                     <tr key={item.id} className={diff !== 0 ? 'bg-danger-soft' : ''}>
                       <td className="p-2 font-medium">{product?.name ?? 'Producto eliminado'}</td>
-                      <td className="p-2 tabular-nums">{item.expected_qty} {product?.unit ?? ''}</td>
-                      <td className="p-2 tabular-nums">{item.actual_qty} {product?.unit ?? ''}</td>
+                      <td className="p-2 tabular-nums">{item.expected_qty} {product?.unit_symbol ?? product?.unit ?? ''}</td>
+                      <td className="p-2 tabular-nums">{item.actual_qty} {product?.unit_symbol ?? product?.unit ?? ''}</td>
                       <td className={`p-2 tabular-nums font-semibold ${diff > 0 ? 'text-ok' : diff < 0 ? 'text-danger' : 'text-soft'}`}>
-                        {diff > 0 ? '+' : ''}{diff} {product?.unit ?? ''}
+                        {diff > 0 ? '+' : ''}{diff} {product?.unit_symbol ?? product?.unit ?? ''}
                       </td>
                     </tr>
                   )
