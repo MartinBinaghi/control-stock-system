@@ -794,8 +794,8 @@ function UnidadesTab({ units, products, onChanged }: { units: Unit[]; products: 
       <section className="card p-4">
         <h2 className={sectionTitle}>Nueva unidad</h2>
         <form onSubmit={addUnit} className="flex flex-wrap gap-2 items-center">
-          <input required placeholder="Nombre (ej: Kilogramo)" aria-label="Nombre de la unidad" value={name} onChange={(e) => setName(e.target.value)} className={`${input} flex-1 min-w-[14rem]`} />
-          <input placeholder="Símbolo (ej: kg)" aria-label="Símbolo de la unidad" value={symbol} onChange={(e) => setSymbol(e.target.value)} className={input} />
+          <input required maxLength={20} placeholder="Nombre (ej: Kilogramo)" aria-label="Nombre de la unidad" value={name} onChange={(e) => setName(e.target.value)} className={`${input} flex-1 min-w-[14rem]`} />
+          <input maxLength={3} placeholder="Símbolo (ej: kg)" aria-label="Símbolo de la unidad" value={symbol} onChange={(e) => setSymbol(e.target.value)} className={input} />
           <button className="btn btn-primary px-4 py-1.5">Crear</button>
         </form>
         {msg && (
@@ -814,8 +814,8 @@ function UnidadesTab({ units, products, onChanged }: { units: Unit[]; products: 
               <li key={u.id} className="panel p-3">
                 {editingId === u.id ? (
                   <form onSubmit={saveEdit} className="flex gap-2 items-center flex-wrap">
-                    <input required autoFocus value={editingName} onChange={(e) => setEditingName(e.target.value)} aria-label="Nombre de la unidad" className={`${input} flex-1 min-w-[12rem]`} />
-                    <input value={editingSymbol} onChange={(e) => setEditingSymbol(e.target.value)} aria-label="Símbolo de la unidad" className={`${input} w-24`} placeholder="Símbolo" />
+                    <input required autoFocus maxLength={20} value={editingName} onChange={(e) => setEditingName(e.target.value)} aria-label="Nombre de la unidad" className={`${input} flex-1 min-w-[12rem]`} />
+                    <input maxLength={3} value={editingSymbol} onChange={(e) => setEditingSymbol(e.target.value)} aria-label="Símbolo de la unidad" className={`${input} w-24`} placeholder="Símbolo" />
                     <button type="button" onClick={() => setEditingId(null)} className="btn btn-ghost px-3 py-1 text-sm">Cancelar</button>
                     <button className="btn btn-primary px-3 py-1 text-sm">Guardar</button>
                   </form>
@@ -1211,7 +1211,7 @@ function ViewAsEncargado({ branch, onExit }: { branch: Branch; onExit: () => voi
           </button>
         </nav>
       </header>
-      <main className="max-w-3xl mx-auto p-4">
+      <main className="max-w-6xl mx-auto p-4">
         {tab === 'mostrador' ? <Mostrador branchId={branch.id} /> : <Remitos branchId={branch.id} />}
       </main>
     </div>

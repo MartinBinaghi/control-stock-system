@@ -82,7 +82,7 @@ export default function App() {
           </button>
         </nav>
       </header>
-      <main className="max-w-3xl mx-auto p-4">{tab === 'mostrador' ? <Mostrador /> : <Remitos />}</main>
+      <main className="w-full px-4 py-4">{tab === 'mostrador' ? <Mostrador /> : <Remitos />}</main>
     </div>
   )
 }
