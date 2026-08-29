@@ -431,7 +431,7 @@ export default function Mostrador({ branchId }: { branchId?: string } = {}) {
                                   title={label}
                                   className={`flex items-center gap-1 max-w-full px-2 py-1 rounded text-xs font-pixel ${
                                   m.type === 'ingreso_manual' ? 'bg-ok-soft text-ok' :
-                                  m.type === 'egreso_manual' ? 'bg-accent-soft text-accent' :
+                                  m.type === 'egreso_manual' ? 'bg-accent/15 text-accent' :
                                   m.type === 'merma' ? 'bg-danger-soft text-danger' :
                                   'bg-warn-soft text-warn'
                                 }`}>
@@ -545,7 +545,7 @@ export default function Mostrador({ branchId }: { branchId?: string } = {}) {
                                 title={label}
                                 className={`flex items-center gap-1 max-w-full px-2 py-1 rounded text-xs font-pixel ${
                                 m.type === 'ingreso_manual' ? 'bg-ok-soft text-ok' :
-                                m.type === 'egreso_manual' ? 'bg-accent-soft text-accent' :
+                                m.type === 'egreso_manual' ? 'bg-accent/15 text-accent' :
                                 m.type === 'merma' ? 'bg-danger-soft text-danger' :
                                 'bg-warn-soft text-warn'
                               }`}>
