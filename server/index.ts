@@ -1,11 +1,14 @@
 import { randomBytes } from 'node:crypto'
 import path from 'node:path'
+import type { IncomingMessage } from 'node:http'
+import type { Duplex } from 'node:stream'
 import express from 'express'
 import type { Request, RequestHandler, Response } from 'express'
 import jwt from 'jsonwebtoken'
 import nodemailer from 'nodemailer'
 import pg from 'pg'
 import webpush from 'web-push'
+import { WebSocket, WebSocketServer } from 'ws'
 import { hashPassword, verifyPassword } from './auth.ts'
 import { rateLimit } from 'express-rate-limit'
 import helmet from 'helmet'
@@ -122,9 +125,9 @@ if (process.env.NODE_ENV !== 'production') {
 
 
 // Autenticación + manejo de errores en un solo wrapper. El token va en
-// Authorization: Bearer (o ?token= para EventSource, que no admite headers).
-// El usuario se relee de la DB en cada request: cambios de rol/sucursal
-// aplican al instante sin invalidar tokens.
+// Authorization: Bearer (o ?token= en el WebSocket /api/realtime, que no
+// admite headers). El usuario se relee de la DB en cada request: cambios de
+// rol/sucursal aplican al instante sin invalidar tokens.
 function authed(fn: (user: User, req: Request, res: Response) => Promise<unknown>): RequestHandler {
   return async (req, res) => {
     const token = /^Bearer (.+)$/.exec(req.headers.authorization ?? '')?.[1] ?? String(req.query.token ?? '')
@@ -830,30 +833,80 @@ app.post('/api/push-subscriptions', authed(async (user, req, res) => {
   res.json({ ok: true })
 }))
 
-// ---------- Alertas en vivo: Postgres NOTIFY → SSE + Web Push ----------
+// ---------- Realtime: Postgres NOTIFY → WebSocket + Web Push ----------
+// Un único canal WS por tenant (/api/realtime) que transporta tres eventos:
+//   { kind: 'alert', ... }      → solo admins del tenant
+//   { kind: 'inventory', ... }  → admins + el encargado de esa sucursal
+//   { kind: 'movement', row }   → admins + el encargado de esa sucursal
+// El token va por query (?token=): el WebSocket del browser no admite headers,
+// igual que el EventSource que reemplazó. Web Push (sendPush) sigue aparte:
+// cubre el caso "app cerrada".
 
-const sseClients = new Map<Response, string>() // res → id del admin dueño
+interface RtSocket extends WebSocket {
+  tenant: string
+  userId: string
+  role: User['role']
+  branchId: string | null
+  isAlive: boolean
+}
 
-app.get('/api/events', authed(async (user, _req, res) => {
-  if (user.role !== 'admin') return void res.status(403).end()
-  res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' })
-  res.write('\n')
-  sseClients.set(res, user.id)
-  res.on('close', () => sseClients.delete(res))
-  res.on('error', (e) => {
-    console.error('SSE client error:', e)
-    sseClients.delete(res)
-  })
-}))
+const wsClients = new Set<RtSocket>()
+const wss = new WebSocketServer({ noServer: true })
 
+async function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
+  try {
+    const { pathname, searchParams } = new URL(req.url ?? '', 'http://localhost')
+    if (pathname !== '/api/realtime') return void socket.destroy()
+    const payload = jwt.verify(searchParams.get('token') ?? '', JWT_SECRET!) as { sub?: string }
+    const user: User | undefined = (await pool.query(
+      'select id, email, name, role, owner_id, branch_id from users where id = $1', [payload.sub],
+    )).rows[0]
+    if (!user) throw new Error('usuario inexistente')
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      const rt = ws as RtSocket
+      rt.tenant = tenantOf(user)
+      rt.userId = user.id
+      rt.role = user.role
+      rt.branchId = user.branch_id
+      rt.isAlive = true
+      wss.emit('connection', rt, req)
+    })
+  } catch {
+    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n')
+    socket.destroy()
+  }
+}
+
+wss.on('connection', (ws) => {
+  const rt = ws as RtSocket
+  wsClients.add(rt)
+  rt.on('pong', () => { rt.isAlive = true })
+  rt.on('close', () => wsClients.delete(rt))
+  rt.on('error', () => wsClients.delete(rt))
+})
+
+// Reparte un evento a las conexiones del tenant. adminsOnly: solo rol admin.
+// branchId: los encargados solo reciben lo de su propia sucursal (los admin,
+// todo el tenant).
+function broadcast(
+  tenant: string, payload: unknown, opts: { adminsOnly?: boolean; branchId?: string | null } = {},
+) {
+  const data = JSON.stringify(payload)
+  for (const ws of wsClients) {
+    if (ws.readyState !== WebSocket.OPEN || ws.tenant !== tenant) continue
+    if (opts.adminsOnly && ws.role !== 'admin') continue
+    if (ws.role === 'encargado' && opts.branchId && ws.branchId !== opts.branchId) continue
+    try { ws.send(data) } catch { wsClients.delete(ws) }
+  }
+}
+
+// Keep-alive: ws no hace ping solo. Cada 30s marca muertas las que no
+// contestaron el ping anterior.
 setInterval(() => {
-  for (const [c] of sseClients) {
-    try {
-      c.write(': ping\n\n')
-    } catch (e) {
-      console.error('SSE ping error:', e)
-      sseClients.delete(c)
-    }
+  for (const ws of wsClients) {
+    if (!ws.isAlive) { ws.terminate(); wsClients.delete(ws); continue }
+    ws.isAlive = false
+    try { ws.ping() } catch { wsClients.delete(ws) }
   }
 }, 30_000)
 
@@ -879,7 +932,20 @@ async function sendPush(alert: { type: string; message: string }, owner: string)
 
 let listenClient: pg.Client | null = null
 
-async function listenAlerts() {
+// branch_id → owner_id: la titularidad de una sucursal no cambia nunca
+const ownerOfBranch = new Map<string, string>()
+async function resolveOwner(branchId: string | undefined): Promise<string | undefined> {
+  if (!branchId) return undefined
+  const cached = ownerOfBranch.get(branchId)
+  if (cached) return cached
+  const owner: string | undefined = (
+    await pool.query('select owner_id from branches where id = $1', [branchId])
+  ).rows[0]?.owner_id
+  if (owner) ownerOfBranch.set(branchId, owner)
+  return owner
+}
+
+async function listenRealtime() {
   if (listenClient) {
     try { await listenClient.end() } catch { /* ya estaba cerrado */ }
     listenClient = null
@@ -887,25 +953,26 @@ async function listenAlerts() {
   const listener = new pg.Client({ connectionString: DATABASE_URL })
   listenClient = listener
   await listener.connect()
-  await listener.query('listen alerts')
+  await listener.query('listen alerts')     // alta de alertas (trigger notify_alert)
+  await listener.query('listen stock_rt')   // movimientos + inventario (trigger apply_stock_movement)
   listener.on('notification', async (msg) => {
     try {
-      // cada alerta va solo al negocio dueño de la sucursal
-      const alert = JSON.parse(msg.payload ?? '{}') as { branch_id?: string; type: string; message: string }
-      const owner: string | undefined = (
-        await pool.query('select owner_id from branches where id = $1', [alert.branch_id])
-      ).rows[0]?.owner_id
-      if (!owner) return
-      for (const [c, tenant] of sseClients) {
-        if (tenant !== owner) continue
-        try {
-          c.write(`data: ${msg.payload}\n\n`)
-        } catch (e) {
-          console.error('SSE notify error:', e)
-          sseClients.delete(c)
-        }
+      if (msg.channel === 'alerts') {
+        // cada alerta va solo a los admin del negocio dueño de la sucursal
+        const alert = JSON.parse(msg.payload ?? '{}') as { branch_id?: string; type: string; message: string }
+        const owner = await resolveOwner(alert.branch_id)
+        if (!owner) return
+        broadcast(owner, { kind: 'alert', ...alert }, { adminsOnly: true })
+        if (pushEnabled) await sendPush(alert, owner)
+      } else if (msg.channel === 'stock_rt') {
+        const ev = JSON.parse(msg.payload ?? '{}') as
+          | { kind: 'movement'; row: { branch_id?: string } }
+          | { kind: 'inventory'; branch_id?: string }
+        const branchId = ev.kind === 'movement' ? ev.row?.branch_id : ev.branch_id
+        const owner = await resolveOwner(branchId)
+        if (!owner) return
+        broadcast(owner, ev, { branchId })
       }
-      if (pushEnabled) await sendPush(alert, owner)
     } catch (e) {
       console.error(e)
     }
@@ -913,7 +980,7 @@ async function listenAlerts() {
   listener.on('error', (e) => {
     console.error('LISTEN client error:', e)
     listener.end().catch(() => {})
-    setTimeout(() => listenAlerts().catch(console.error), 5000) // reconexión simple
+    setTimeout(() => listenRealtime().catch(console.error), 5000) // reconexión simple
   })
 }
 
@@ -927,5 +994,6 @@ app.get('*', (req, res) => {
   })
 })
 
-app.listen(Number(PORT), () => console.log(`API en http://localhost:${PORT}`))
-listenAlerts().catch((e) => console.error('LISTEN alerts falló:', e))
+const server = app.listen(Number(PORT), () => console.log(`API en http://localhost:${PORT}`))
+server.on('upgrade', (req, socket, head) => void handleUpgrade(req, socket, head))
+listenRealtime().catch((e) => console.error('LISTEN realtime falló:', e))

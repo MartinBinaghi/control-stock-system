@@ -5,7 +5,8 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
   server: {
-    proxy: { '/api': 'http://localhost:3001' },
+    // ws: true → proxya también el upgrade de WebSocket (/api/realtime)
+    proxy: { '/api': { target: 'http://localhost:3001', ws: true } },
   },
   plugins: [
     react(),

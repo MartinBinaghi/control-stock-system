@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { ArrowDownCircle, ArrowUpCircle, Cog, Trash2, Clock, CheckCircle, XCircle, Plus, X, Truck, PackageMinus } from 'lucide-react'
 import { api, getMovements, produce, MOVEMENT_LABELS, type MovementType, type Product, type Movement } from '../lib/api'
+import { connectRealtime } from '../lib/realtime'
 import Carpi from '../components/Carpi'
 
 const MERMA_CAUSAS = ['Vencimiento', 'Cadena de frío', 'Rotura', 'Otro']
@@ -48,6 +49,9 @@ export default function Mostrador({ branchId }: { branchId?: string } = {}) {
   const [undoToast, setUndoToast] = useState<{ movement: Movement; timeout: ReturnType<typeof setTimeout> } | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const listRef = useRef<HTMLUListElement>(null)
+  // espejo de `rows` para leerlo dentro del handler del WebSocket sin re-suscribir
+  const rowsRef = useRef<Row[] | null>(null)
+  useEffect(() => { rowsRef.current = rows }, [rows])
 
   const load = useCallback(async () => {
     const [products, inv, movements] = await Promise.all([
@@ -74,7 +78,27 @@ export default function Mostrador({ branchId }: { branchId?: string } = {}) {
 
   useEffect(() => {
     load()
-  }, [load])
+    // stock + movimientos en vivo. El server ya scopea al encargado a su
+    // sucursal; si `branchId` viene como prop (admin en "vista de encargado")
+    // filtramos también del lado del cliente.
+    return connectRealtime({
+      onConnect: load,
+      onEvent: (ev) => {
+        if (ev.kind === 'inventory') {
+          if (branchId && ev.branch_id !== branchId) return
+          setRows((rs) => rs && rs.map((r) => (r.id === ev.product_id ? { ...r, current_stock: ev.current_stock } : r)))
+        } else if (ev.kind === 'movement') {
+          const m = ev.row
+          if (branchId && m.branch_id !== branchId) return
+          setRecentMovements((prev) => {
+            if (prev.some((x) => x.id === m.id)) return prev
+            const product_name = rowsRef.current?.find((r) => r.id === m.product_id)?.name ?? '—'
+            return [{ ...m, product_name }, ...prev].slice(0, 30)
+          })
+        }
+      },
+    })
+  }, [load, branchId])
 
   // Keyboard shortcuts
   useEffect(() => {

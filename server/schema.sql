@@ -176,6 +176,18 @@ begin
     );
   end if;
 
+  -- realtime: el server escucha el canal 'stock_rt' y reparte por WebSocket
+  -- (movimiento + stock resultante). Se entrega al commit, igual que las alertas.
+  perform pg_notify('stock_rt', json_build_object(
+    'kind', 'movement', 'row', row_to_json(new)
+  )::text);
+  perform pg_notify('stock_rt', json_build_object(
+    'kind', 'inventory',
+    'branch_id', new.branch_id,
+    'product_id', new.product_id,
+    'current_stock', new_stock
+  )::text);
+
   return new;
 end $$;
 

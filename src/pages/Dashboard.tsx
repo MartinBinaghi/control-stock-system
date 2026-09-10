@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { AlertTriangle, Bell, BellRing, Boxes, Building2, Check, ClipboardList, Cog, FileText, LogOut, Mail, RefreshCw, Trash2, Pencil, Repeat, Search, Scale } from 'lucide-react'
 import {
-  api, createAlert, createProcess, deleteBranch, deleteProcess, deleteProduct, getToken, resendInvite,
+  api, createAlert, createProcess, deleteBranch, deleteProcess, deleteProduct, resendInvite,
   updateBranch, updateProcess, updateProduct, MOVEMENT_LABELS, createUnit, updateUnit, deleteUnit,
   type Alert, type Branch, type MovementType, type Process, type Product, type RecipeItem, type Worker, type Unit,
 } from '../lib/api'
+import { connectRealtime } from '../lib/realtime'
 import Carpi, { CarpiHead } from '../components/Carpi'
 import ThemeToggle from '../components/ThemeToggle'
 import Mostrador from './Mostrador'
@@ -98,10 +99,20 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
       .then((r) => r.pushManager.getSubscription())
       .then((s) => s && setPushOn(true))
       .catch(() => {})
-    // alertas en vivo por SSE (EventSource no admite headers → token en query)
-    const es = new EventSource('/api/events?token=' + getToken())
-    es.onmessage = (e) => setAlerts((a) => [JSON.parse(e.data) as Alert, ...(a ?? [])])
-    return () => es.close()
+    // alertas + stock en vivo por WebSocket
+    return connectRealtime({
+      onConnect: load,
+      onEvent: (ev) => {
+        if (ev.kind === 'alert') {
+          setAlerts((a) => (a?.some((x) => x.id === ev.id) ? a : [ev, ...(a ?? [])]))
+        } else if (ev.kind === 'inventory') {
+          setInventory((inv) => [
+            ...inv.filter((i) => !(i.branch_id === ev.branch_id && i.product_id === ev.product_id)),
+            { branch_id: ev.branch_id, product_id: ev.product_id, current_stock: ev.current_stock },
+          ])
+        }
+      },
+    })
   }, [load])
 
   const loadMovements = useCallback(async (filters = f) => {
